@@ -1,11 +1,22 @@
 PRESSURE SENSOR TEST — MODULARSIM SENSORHUB
 ===========================================
 
-WHAT THIS PROJECT IS
---------------------
-This is the small Phase-1 proof-of-concept project we were building.
+PROJECT
+-------
+K.E.V.I.N
+Advanced Life Support Infant Monitor Simulator
 
-It tests this path:
+This directory contains the current Phase-1 respiratory pressure
+proof-of-concept.
+
+The purpose of this PoC is to investigate whether the existing
+Pressure SimModule and SensorHub can be used to detect pressure-related
+events that may eventually contribute to ventilation detection in the
+infant manikin.
+
+
+CURRENT VERIFIED SIGNAL PATH
+----------------------------
 
 Air pressure
   -> MPXV5010GP pressure sensor
@@ -13,125 +24,438 @@ Air pressure
   -> MCP3426 ADC
   -> I2C
   -> SensorHub SAMD21
+  -> pressure sampling
+  -> baseline estimation
+  -> positive / negative pressure event detection
+  -> candidate ventilation event counting
   -> USB Serial
   -> laptop
 
-It does NOT yet:
-- convert the reading to kPa,
-- detect breaths,
-- classify ventilation,
-- update PatientState.
 
-We first want to prove that the SensorHub can see the MCP3426 and that
-the ADC value changes when pressure changes.
-
-
-HOW TO OPEN IT
+CURRENT STATUS
 --------------
-1. Extract this ZIP somewhere on your computer.
-2. Open VS Code.
-3. File -> Open Folder...
-4. Select the extracted "PressureSensorTest" folder.
-5. Make sure PlatformIO IDE is enabled/trusted.
+The following functionality has been successfully demonstrated:
+
+- SensorHub firmware builds and uploads using PlatformIO.
+- USB serial communication with the SAMD21 works.
+- Pressure SimModule is connected through Sensor A2.
+- MCP3426 responds at I2C address 0x68.
+- MCP3426 channel 1 ADC readings are successfully acquired.
+- Resting pressure produces a relatively stable raw baseline.
+- Applying positive pressure with a syringe increases the raw ADC value.
+- Pulling the syringe produces a raw value below the resting baseline.
+- The signal returns toward baseline after pressure is released.
+- Individual positive pressure events can be detected.
+- Individual negative pressure events can be detected.
+- Positive events can be counted as CANDIDATE VENTILATION events.
+- Event peak magnitude can be recorded.
+- Event duration can be measured.
+- Time between candidate events can be measured.
+
+
+IMPORTANT LIMITATION
+--------------------
+The current test uses a syringe operated manually and randomly.
+
+Therefore:
+
+- Candidate ventilation events are NOT yet validated breaths.
+- Event intervals are NOT yet respiratory rate.
+- Raw ADC magnitude is NOT yet a measure of ventilation quality.
+- The pressure reading is NOT yet converted to calibrated pressure units.
+- No clinical thresholds have been defined.
+- No "normal", "reduced", or "obstructed" ventilation thresholds have
+  been validated.
+
+The current software proves pressure-event detection only.
 
 
 HARDWARE
 --------
 SensorHub:
-- SAMD21
+- ModularSim SensorHub v1.2.2
+- SAMD21 / Cortex-M0+
 - programmed over Micro-USB
 
 Pressure module:
-- physical board contains MPXV5010GP
+- Pressure SimModule
+- physical board marked v2.0.0
+- MPXV5010GP pressure sensor
 - MCP3426 ADC
-- 4-pin connector
+- 4-pin sensor connector
 
-Pressure-module connector documented as:
+The available older pressure-module schematic documents the connector as:
+
 P1 = GND
 P2 = 3.3 V
 P3 = SCL
 P4 = SDA
 
-For this test, use the Sensor A2 connector.
+NOTE:
+The older schematic documents a different pressure-sensor part number
+than the physical module currently being tested.
 
-IMPORTANT:
-Power the SensorHub OFF before plugging/unplugging the pressure module.
-Do not force the keyed connector.
+Therefore the old schematic must not be assumed to completely describe
+the physical 2026 pressure module.
+
+For the current PoC, the pressure module is connected to Sensor A2.
+
+
+SENSOR A2 I2C CONFIGURATION
+---------------------------
+This is the verified working configuration.
+
+Sensor A2:
+
+SDA:
+- Arduino pin 11
+- SAMD21 PA16
+
+SCL:
+- Arduino pin 13
+- SAMD21 PA17
+
+Peripheral:
+- SERCOM1
+- normal SERCOM pin mux
+
+Firmware configuration:
+
+    #define SENSOR_A_SDA 11
+    #define SENSOR_A_SCL 13
+
+    TwoWire WireSensorA(
+        &sercom1,
+        SENSOR_A_SDA,
+        SENSOR_A_SCL
+    );
+
+    void SERCOM1_Handler()
+    {
+        WireSensorA.onService();
+    }
+
+Initialization:
+
+    WireSensorA.begin();
+
+    pinPeripheral(SENSOR_A_SDA, PIO_SERCOM);
+    pinPeripheral(SENSOR_A_SCL, PIO_SERCOM);
+
+    WireSensorA.setClock(100000);
+
+
+MCP3426
+-------
+Verified I2C address:
+
+    0x68
+
+Current ADC configuration:
+
+    0x88
+
+Current implementation uses:
+- channel 1
+- one-shot conversion
+- 16-bit mode
+- gain x1
+
+The current voltage conversion used in firmware is:
+
+    voltage = rawValue * (2.048 / 32768.0)
+
+
+PLATFORMIO
+----------
+Current PlatformIO environment:
+
+    [env:adafruit_feather_m0_express]
+    platform = atmelsam
+    board = adafruit_feather_m0_express
+    framework = arduino
+    monitor_speed = 115200
+
+The SensorHub SAMD21 is currently programmed using the
+Adafruit Feather M0 Express PlatformIO configuration.
 
 
 BUILD / UPLOAD
 --------------
-1. First leave the pressure module disconnected.
-2. Connect SensorHub to laptop with Micro-USB.
-3. In PlatformIO click Build (check mark).
-4. Then Upload (right arrow).
+Connect the SensorHub to the laptop using Micro-USB.
 
-If PlatformIO cannot find the USB port:
-- run PlatformIO -> Devices,
-- find the USB Serial Device,
-- edit platformio.ini and uncomment:
-    upload_port = COM3
-    monitor_port = COM3
-- change COM3 to your actual COM number.
+In VS Code with PlatformIO:
+
+1. Build the project.
+2. Upload the firmware.
+3. Open Serial Monitor.
+4. Use 115200 baud.
+
+The SensorHub currently appears as COM3 on the development laptop,
+but COM port numbering may change between computers or USB connections.
 
 
-PRESSURE TEST
--------------
-After the firmware uploads successfully:
+I2C VERIFICATION
+----------------
+The MCP3426 was successfully detected using:
 
-1. Stop Serial Monitor if it is running.
-2. Unplug USB so the SensorHub is powered off.
-3. Connect the Pressure SimModule to Sensor A2.
-4. Plug USB back in.
-5. Open PlatformIO Serial Monitor at 115200 baud.
+    Trying MCP3426 at 0x68...
+    I2C result = 0
+    *** MCP3426 FOUND ***
 
-Expected startup output should look similar to:
+This verified:
 
-    Scanning Sensor A2 I2C bus...
-      Found I2C device at 0x68
-    MCP3426 found at address 0x68.
-    Starting CH1 readings...
+- Sensor A2 communication is functional.
+- PA16 / PA17 configuration is functional.
+- SERCOM1 is functional.
+- the pressure module is powered sufficiently to communicate.
+- the MCP3426 is responding on the bus.
 
-Then repeated lines should appear:
 
-    RAW: 1234    Voltage: 0.077125 V
-    RAW: 1236    Voltage: 0.077250 V
-    ...
+RAW PRESSURE TEST
+-----------------
+Typical resting readings observed during development were approximately:
 
-The numbers above are examples only.
+    RAW ~ 2530 to 2550
 
-FIRST SUCCESS CRITERION
+Example positive-pressure behaviour:
+
+    resting ~2520
+    pressure applied
+    raw increases into the thousands
+    pressure released
+    raw returns toward baseline
+
+Example negative-pressure behaviour:
+
+    resting ~2530
+    syringe pulled
+    raw falls below baseline
+    release
+    raw returns toward baseline
+
+Therefore the experimentally observed direction is:
+
+    RAW > baseline
+        positive applied pressure
+
+    RAW approximately baseline
+        resting condition
+
+    RAW < baseline
+        pressure below resting baseline / syringe suction
+
+
+PRESSURE EVENT DETECTOR
 -----------------------
-MCP3426 is detected at 0x68 and repeated ADC readings appear.
+The current firmware uses a simple state machine:
 
-SECOND SUCCESS CRITERION
+    IDLE
+      |
+      +--> POSITIVE_EVENT
+      |
+      +--> NEGATIVE_EVENT
+
+Current experimental thresholds:
+
+    EVENT_THRESHOLD = 200
+    RETURN_THRESHOLD = 80
+
+These values were selected for the current bench PoC because baseline
+variation was much smaller than the syringe-generated pressure changes.
+
+They are NOT physiological thresholds.
+
+
+CANDIDATE VENTILATION
+---------------------
+Positive pressure events are currently counted as:
+
+    CANDIDATE VENTILATION
+
+This terminology is deliberate.
+
+A positive syringe-pressure event demonstrates that the system can
+detect and count an event that could potentially correspond to
+positive-pressure ventilation later.
+
+It has NOT yet been demonstrated that the same algorithm reliably
+detects actual ventilation through the infant manikin airway.
+
+
+CURRENT EXPERIMENTAL RESULTS
+----------------------------
+The event detector successfully detected multiple separate positive
+and negative syringe events.
+
+Example:
+
+    >>> POSITIVE PRESSURE START
+    >>> POSITIVE PRESSURE END
+
+    CANDIDATE VENTILATION #1
+    Peak RAW change = +574
+    Event duration = 3614 ms
+
+Negative events were recorded separately:
+
+    >>> NEGATIVE PRESSURE START
+    >>> NEGATIVE PRESSURE END
+
+    Minimum RAW change = -798
+    Event duration = 3915 ms
+
+Additional testing successfully counted candidate ventilation events
+sequentially while also recording their duration and the interval
+between positive events.
+
+
+IMPORTANT INTERPRETATION
 ------------------------
-When pressure at the pressure-sensor port changes gently, the raw reading
-changes clearly and returns toward baseline after release.
+The syringe was operated manually.
 
-Do NOT invent a breath threshold yet. First collect real measurements.
+Large differences were observed between positive-pressure peaks.
+
+This does NOT show that the pressure detector is unreliable.
+
+It shows that the physical syringe input was uncontrolled.
+
+Therefore a fixed raw ADC value must NOT currently be interpreted as:
+
+- a correct breath,
+- an incorrect breath,
+- sufficient ventilation,
+- insufficient ventilation,
+- a specific pressure,
+- a specific tidal volume.
 
 
-NOTE ABOUT THE SENSORHUB I2C PINS
+CURRENT SOFTWARE ARCHITECTURE
+-----------------------------
+
+Physical pressure
+        |
+        v
+MPXV5010GP
+        |
+        v
+Analog voltage
+        |
+        v
+MCP3426 ADC
+        |
+        | I2C
+        v
+SensorHub SAMD21
+        |
+        v
+Raw ADC samples
+        |
+        v
+Baseline estimation
+        |
+        v
+Pressure difference
+        |
+        v
+Pressure event state machine
+        |
+        +--> POSITIVE PRESSURE EVENT
+        |
+        +--> NEGATIVE PRESSURE EVENT
+        |
+        v
+Candidate ventilation counter / timing
+        |
+        v
+USB Serial output
+
+
+WHAT HAS NOT BEEN IMPLEMENTED YET
 ---------------------------------
-This project uses:
-- SDA = Arduino pin 28 = PA12
-- SCL = Arduino pin 39 = PA13
-- SERCOM2 using the normal SERCOM pin mux
+The current PoC does NOT yet:
 
-This is a self-contained test and does not require the old
-WireScanner.h or TwiPinHelper.h helper files.
+- convert raw ADC readings to validated airway pressure,
+- measure airflow,
+- measure tidal volume,
+- detect clinically validated breaths,
+- calculate a validated respiratory rate,
+- distinguish effective from ineffective ventilation,
+- detect airway obstruction reliably,
+- detect mask leak,
+- control chest-rise hardware,
+- control pumps or valves,
+- update the central PatientState,
+- communicate respiratory events to the Raspberry Pi,
+- simulate respiratory deterioration,
+- drive the real patient monitor.
 
 
-IF 0x68 IS NOT FOUND
---------------------
-Do not start changing random wiring.
+NEXT ENGINEERING STEP
+---------------------
+The next useful experiment is not simply adding more software.
 
-Record exactly what the Serial Monitor says and check:
-- pressure module is on Sensor A2,
-- connector orientation/keying,
-- SensorHub is powered,
-- I2C scan result.
+The pressure sensing system should be connected to a more realistic
+respiratory setup containing some combination of:
 
-Then troubleshoot the bus configuration before doing anything with
-pressure conversion or breath detection.
+    air source / ventilation input
+            |
+            v
+         airway
+            |
+            v
+    pressure sensing point
+            |
+            v
+    resistance / tubing
+            |
+            v
+       compliant lung
+
+The next experiments should investigate whether the pressure signal can
+distinguish conditions such as:
+
+- effective ventilation,
+- reduced ventilation,
+- restricted / obstructed airway,
+- no ventilation.
+
+These classifications must be based on controlled experiments rather
+than arbitrary thresholds.
+
+
+SAFETY / HANDLING
+-----------------
+Power the SensorHub off before changing module connections.
+
+Do not force connectors.
+
+Use gentle pressure during bench testing.
+
+Do not assume the allowable positive or negative pressure range until
+the exact physical pressure sensor configuration has been verified.
+
+This project is for simulation and training use only.
+
+It must not be connected to a human patient.
+
+
+PHASE-1 RESULT
+--------------
+The current proof of concept demonstrates that the available pressure
+module can be read successfully through the existing SensorHub and that
+software running on the SAMD21 can identify discrete pressure events.
+
+The verified path is:
+
+Pressure
+  -> MPXV5010GP
+  -> MCP3426
+  -> I2C
+  -> SensorHub SAMD21
+  -> pressure samples
+  -> event detection
+  -> candidate ventilation events
+
+The next phase is to determine how these pressure events relate to
+actual manikin ventilation.
