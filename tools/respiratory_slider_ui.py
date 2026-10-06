@@ -52,8 +52,6 @@ class PressureSerialReader:
         self._lock = threading.Lock()
         self._state = DashboardState(port=port)
         self._serial: Optional[serial.Serial] = None
-        self._auto_recalibration_samples = []
-        self._last_auto_recalibration = 0.0
         self._thread = threading.Thread(target=self._run, daemon=True)
 
     def start(self) -> None:
@@ -154,50 +152,6 @@ class PressureSerialReader:
             self._state.exhale_delta = exhale_delta
             self._state.error = ""
 
-        return raw, sample_ok, baseline_ok, state_name
-
-    def _maybe_auto_recalibrate(
-        self,
-        raw: Optional[int],
-        sample_ok: bool,
-        baseline_ok: bool,
-        state_name: str,
-    ) -> None:
-        """Automatically request a new baseline after a stable CAL_REQUIRED period."""
-        if baseline_ok or not sample_ok or raw is None or state_name != "CAL_REQUIRED":
-            self._auto_recalibration_samples.clear()
-            return
-
-        self._auto_recalibration_samples.append(raw)
-        self._auto_recalibration_samples = self._auto_recalibration_samples[-8:]
-
-        # Roughly one second of stable raw readings is required before sending z.
-        if len(self._auto_recalibration_samples) < 8:
-            return
-
-        if max(self._auto_recalibration_samples) - min(self._auto_recalibration_samples) > 30:
-            return
-
-        now = time.monotonic()
-        if now - self._last_auto_recalibration < 5.0:
-            return
-
-        with self._lock:
-            ser = self._serial
-
-        if ser is None or not ser.is_open:
-            return
-
-        try:
-            ser.write(b"z")
-            ser.flush()
-            self._last_auto_recalibration = now
-            self._auto_recalibration_samples.clear()
-            with self._lock:
-                self._state.last_event = "Auto-recalibrating baseline"
-        except serial.SerialException:
-            return
-
     def _run(self) -> None:
         while True:
             try:
@@ -219,9 +173,7 @@ class PressureSerialReader:
                     if line.startswith("#"):
                         self._handle_comment(line)
                     else:
-                        sample = self._handle_sample(line)
-                        if sample is not None:
-                            self._maybe_auto_recalibrate(*sample)
+                        self._handle_sample(line)
 
             except (serial.SerialException, OSError) as exc:
                 self._set_disconnected(str(exc))
@@ -324,8 +276,7 @@ PAGE = r"""<!doctype html>
     <span class="badge" id="connection">Connecting...</span>
     <span class="badge">State: <strong id="pressureState">—</strong></span>
     <span class="badge">Candidate count: <strong id="candidateCount">0</strong></span>
-    <span class="badge">Auto baseline: ON</span>
-    <button onclick="recalibrate()">Recalibrate baseline</button>
+    <button onclick="recalibrate()">Calibrate baseline</button>
   </div>
 
   <div class="grid">
@@ -450,8 +401,8 @@ def main() -> None:
     parser.add_argument(
         "--display-max",
         type=int,
-        default=4000,
-        help="Maximum raw delta shown by each slider; values above this are clipped visually.",
+        default=32000,
+        help="Maximum raw delta shown by each inhale/exhale slider; values above this are clipped visually.",
     )
     args = parser.parse_args()
 
