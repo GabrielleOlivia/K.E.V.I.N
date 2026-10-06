@@ -18,6 +18,7 @@ void SERCOM1_Handler()
 const int EVENT_THRESHOLD = 200;
 const int RETURN_THRESHOLD = 80;
 const int CALIBRATION_SAMPLES = 30;
+const int MAX_CALIBRATION_ATTEMPTS = 45;
 const int MAX_CALIBRATION_SPREAD = 80;
 
 enum PressureState
@@ -139,24 +140,49 @@ void invalidateBaseline()
 
 bool calibrateBaseline()
 {
-    invalidateBaseline();
+    // Do NOT throw away a known-good baseline just because a new calibration
+    // attempt has a missed ADC sample. Only replace the baseline after a
+    // complete, stable calibration succeeds.
+    const bool hadBaseline = baselineValid;
+    const int32_t previousBaseline = baseline;
+
+    pressureState = IDLE;
+    eventStartTime = 0;
+    peakValue = 0;
+    minimumValue = 0;
+    havePreviousCandidate = false;
+    previousCandidateTime = 0;
+
     Serial.println("# CALIBRATING: keep pressure at rest; do not move the syringe.");
 
     int32_t total = 0;
     int32_t smallest = 32767;
     int32_t largest = -32768;
-    for (int i = 0; i < CALIBRATION_SAMPLES; ++i)
+    int goodSamples = 0;
+    int attempts = 0;
+
+    while (goodSamples < CALIBRATION_SAMPLES &&
+           attempts < MAX_CALIBRATION_ATTEMPTS)
     {
+        ++attempts;
+
         int16_t raw = 0;
         const bool sampleOk = readPressureADC(raw);
+
+        // During a re-calibration attempt, preserve/show the old baseline until
+        // the new baseline has actually passed all checks.
         printSample(millis(), sampleOk, raw, "CALIBRATING");
+
         if (!sampleOk)
         {
-            Serial.println("# CALIBRATION_FAILED: ADC read failed; counting disabled. Send z to retry.");
-            return false;
+            Serial.println("# CALIBRATION_NOTE: ADC sample missed; retrying.");
+            delay(50);
+            continue;
         }
 
         total += raw;
+        ++goodSamples;
+
         if (raw < smallest)
         {
             smallest = raw;
@@ -165,20 +191,41 @@ bool calibrateBaseline()
         {
             largest = raw;
         }
+
         delay(50);
+    }
+
+    if (goodSamples < CALIBRATION_SAMPLES)
+    {
+        baselineValid = hadBaseline;
+        baseline = previousBaseline;
+        Serial.println(
+            hadBaseline
+                ? "# CALIBRATION_FAILED: not enough good ADC samples; previous baseline retained."
+                : "# CALIBRATION_FAILED: not enough good ADC samples; no baseline available."
+        );
+        return false;
     }
 
     if (largest - smallest > MAX_CALIBRATION_SPREAD)
     {
-        Serial.println("# CALIBRATION_FAILED: signal moved too much; counting disabled. Send z to retry.");
+        baselineValid = hadBaseline;
+        baseline = previousBaseline;
+        Serial.println(
+            hadBaseline
+                ? "# CALIBRATION_FAILED: signal moved too much; previous baseline retained."
+                : "# CALIBRATION_FAILED: signal moved too much; no baseline available."
+        );
         return false;
     }
 
     baseline = total / CALIBRATION_SAMPLES;
     baselineValid = true;
+
     Serial.print("# READY: baseline_raw=");
     Serial.print(baseline);
-    Serial.println("; counting enabled. Send z to recalibrate.");
+    Serial.println("; baseline locked until you press Calibrate baseline again.");
+
     return true;
 }
 
@@ -268,7 +315,12 @@ void setup()
     pinPeripheral(SENSOR_A_SCL, PIO_SERCOM);
     WireSensorA.setClock(100000);
     delay(500);
-    calibrateBaseline();
+
+    // Manual-only calibration: stay in CAL_REQUIRED until the dashboard/user
+    // explicitly sends 'z'. A valid baseline then remains fixed until another
+    // manual recalibration or an ADC fault invalidates it.
+    invalidateBaseline();
+    Serial.println("# CAL_REQUIRED: press Calibrate baseline (sends z) when pressure is at rest.");
 }
 
 void loop()
@@ -293,12 +345,10 @@ void loop()
     const unsigned long tMs = millis();
     if (!sampleOk)
     {
-        const bool wasValid = baselineValid;
-        invalidateBaseline();
-        if (wasValid)
-        {
-            Serial.println("# ADC_FAULT: counting disabled. After recovery, send z with pressure at rest.");
-        }
+        // Keep the last valid baseline through transient ADC/read failures.
+        // The bad sample is discarded, but the user does not have to recalibrate.
+        // A new baseline is only created when the user explicitly sends 'z'.
+        Serial.println("# ADC_FAULT: sample discarded; previous baseline retained.");
         printSample(tMs, false, 0, stateName());
         delay(200);
         return;
