@@ -115,8 +115,14 @@ class PressureSerialReader:
             elif line.startswith("# READY"):
                 self._state.last_event = "Baseline ready"
 
-            elif "CALIBRATION_FAILED" in line or "ADC_FAULT" in line:
-                self._state.last_event = "Sensor/calibration fault"
+            elif "CALIBRATION_FAILED" in line:
+                if "previous baseline retained" in line:
+                    self._state.last_event = "Calibration attempt failed — previous baseline kept"
+                else:
+                    self._state.last_event = "Calibration failed — press Calibrate baseline again"
+
+            elif "ADC_FAULT" in line:
+                self._state.last_event = "Transient ADC sample missed — baseline kept"
 
     def _handle_sample(self, line: str) -> None:
         parts = line.split(",")
@@ -141,15 +147,25 @@ class PressureSerialReader:
         with self._lock:
             self._state.connected = True
             self._state.t_ms = t_ms
-            self._state.raw = raw
-            self._state.baseline = baseline
-            self._state.delta = delta
             self._state.pressure_state = state_name
             self._state.candidate_count = candidate_count
             self._state.sample_ok = sample_ok
             self._state.baseline_ok = baseline_ok
-            self._state.inhale_delta = inhale_delta
-            self._state.exhale_delta = exhale_delta
+
+            # A transient failed ADC read contains empty raw/delta fields.
+            # Keep the last good displayed values instead of flashing the UI
+            # back to dashes/zero for one missed sample.
+            if sample_ok and raw is not None:
+                self._state.raw = raw
+
+            if baseline is not None:
+                self._state.baseline = baseline
+
+            if sample_ok and delta is not None:
+                self._state.delta = delta
+                self._state.inhale_delta = inhale_delta
+                self._state.exhale_delta = exhale_delta
+
             self._state.error = ""
 
     def _run(self) -> None:
