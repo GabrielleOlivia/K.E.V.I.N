@@ -298,12 +298,10 @@ void loop()
     const unsigned long tMs = millis();
     if (!sampleOk)
     {
-        const bool wasValid = baselineValid;
-        invalidateBaseline();
-        if (wasValid)
-        {
-            Serial.println("# ADC_FAULT: counting disabled. After recovery, send z with pressure at rest.");
-        }
+        // Keep the last valid baseline through transient ADC/read failures.
+        // The bad sample is discarded, but the user does not have to recalibrate.
+        // A new baseline is only created when the user explicitly sends 'z'.
+        Serial.println("# ADC_FAULT: sample discarded; previous baseline retained.");
         printSample(tMs, false, 0, stateName());
         delay(200);
         return;
