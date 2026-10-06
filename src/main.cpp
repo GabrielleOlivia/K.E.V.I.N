@@ -268,7 +268,12 @@ void setup()
     pinPeripheral(SENSOR_A_SCL, PIO_SERCOM);
     WireSensorA.setClock(100000);
     delay(500);
-    calibrateBaseline();
+
+    // Manual-only calibration: stay in CAL_REQUIRED until the dashboard/user
+    // explicitly sends 'z'. A valid baseline then remains fixed until another
+    // manual recalibration or an ADC fault invalidates it.
+    invalidateBaseline();
+    Serial.println("# CAL_REQUIRED: press Calibrate baseline (sends z) when pressure is at rest.");
 }
 
 void loop()
