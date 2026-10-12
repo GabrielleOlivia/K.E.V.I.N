@@ -65,3 +65,30 @@ Avoid high pressure/strong vacuum, forceful syringe pushes, or sealing/occluding
 - COM port may change when uploading/rebooting the SAMD21.
 - Raspberry Pi is not required for this laptop-only version.
 - The dashboard does not actuate anything or simulate a real patient monitor.
+
+
+## Interpreting the recorded at-rest behaviour
+
+In the 12 October screen recording, the dashboard showed fluctuations close to
+zero after calibration. Near the end of the clip, raw ADC 2522 and baseline
+2520 produced +2 counts. A nonzero small delta is expected for a sensitive
+sensor, even without deliberate input. Do not hide raw readings or silently
+auto-recalibrate: the engineering panel exposes the actual signed delta.
+
+The earlier +185 at-rest reading cannot conclusively be assigned to a software
+bug or sensor drift from the screen recording alone. If the resting delta grows,
+check that the pressure port is at atmospheric pressure, leave it untouched,
+and inspect the raw and baseline readings. Avoid blowing directly into the
+sensor port: moisture/condensation could damage the part. Use a clean dry
+pressure source with a suitable protective interface instead.
+
+## Shutdown troubleshooting
+
+The in-page Stop dashboard button works when the server is started by this
+new script. It requests a local HTTP shutdown, and the server releases
+the serial port. If the Python process crashed before the page could respond,
+close its launcher console window or terminate the process normally.
+Never disconnect the board while PlatformIO is uploading firmware.
+
+The one-click launcher only exists on Windows as a `.cmd` file; Linux/Raspberry
+Pi users can continue launching the Python file from the shell.
