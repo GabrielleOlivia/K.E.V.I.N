@@ -14,11 +14,14 @@ import argparse
 import math
 import threading
 import time
+import webbrowser
 from dataclasses import asdict, dataclass
 from typing import Optional
 
 import serial
-from flask import Flask, jsonify, render_template_string
+from serial.tools import list_ports
+from flask import Flask, jsonify, render_template_string, request
+from werkzeug.serving import make_server
 
 
 @dataclass
@@ -48,10 +51,24 @@ class SerialPressureReader:
         self._state = State(port=port)
         self._serial: Optional[serial.Serial] = None
         self._last_received_monotonic = 0.0
+        self._stop_event = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True)
 
     def start(self) -> None:
         self._thread.start()
+
+    def stop(self) -> None:
+        """Stop serial collection and release COM port when exiting the dashboard."""
+        self._stop_event.set()
+        with self._lock:
+            ser = self._serial
+        if ser is not None:
+            try:
+                ser.close()
+            except (serial.SerialException, OSError):
+                pass
+        if self._thread.is_alive():
+            self._thread.join(timeout=2.0)
 
     def snapshot(self) -> dict:
         with self._lock:
@@ -146,14 +163,14 @@ class SerialPressureReader:
             self._state.error = ""
 
     def _run(self) -> None:
-        while True:
+        while not self._stop_event.is_set():
             try:
                 with serial.Serial(self.port, self.baud, timeout=0.8) as ser:
                     with self._lock:
                         self._serial = ser
                         self._state.connected = True
                         self._state.error = ""
-                    while ser.is_open:
+                    while ser.is_open and not self._stop_event.is_set():
                         line = ser.readline()
                         if line:
                             self.handle_line(line.decode("utf-8", errors="replace"))
@@ -163,7 +180,7 @@ class SerialPressureReader:
                     self._state.connected = False
                     self._state.firmware_state = "DISCONNECTED"
                     self._state.error = str(exc)
-                time.sleep(2)
+                self._stop_event.wait(2)
 
 
 class SimulatedPressureReader:
@@ -172,6 +189,9 @@ class SimulatedPressureReader:
         self._started = time.monotonic()
 
     def start(self) -> None:
+        pass
+
+    def stop(self) -> None:
         pass
 
     def recalibrate(self) -> bool:
@@ -292,6 +312,7 @@ summary{padding:17px 20px;cursor:pointer;font-weight:800}
       <button id="calibrate" onclick="calibrate()">Calibrate sensor</button>
       <button class="secondary" onclick="clearGraph()">Clear graph</button>
       <button class="secondary" onclick="toggleFullscreen()">Full screen</button>
+      <button class="secondary" id="stopButton" onclick="stopDashboard()">Stop dashboard</button>
     </div>
   </div>
   <div class="health">
@@ -360,6 +381,7 @@ const horizon=25000;
 let displayScale=SCALE_DEFAULT;
 let lastTimestamp=null;
 let calibrateCooldown=false;
+let dashboardStopped=false;
 let eventCounterStart=null;
 let previousEventCount=null;
 const $ = id => document.getElementById(id);
@@ -469,6 +491,7 @@ function updateUI(s){
   addPoint(s);renderGraph();
 }
 async function poll(){
+  if(dashboardStopped)return;
   try{
     const response=await fetch("/api/state",{cache:"no-store"});
     if(!response.ok)throw new Error("HTTP "+response.status);
@@ -492,6 +515,26 @@ async function calibrate(){
   }catch(error){alert("Unable to send calibration command: "+error.message);}
   window.setTimeout(()=>{calibrateCooldown=false;},5500);
 }
+async function stopDashboard(){
+  if(dashboardStopped)return;
+  if(!window.confirm("Stop the K.E.V.I.N. dashboard and release the sensor COM port?"))return;
+  $("stopButton").disabled=true;
+  try{
+    const response=await fetch("/api/stop",{method:"POST"});
+    const result=await response.json();
+    if(!response.ok || !result.ok)throw new Error(result.message || "Could not stop");
+    dashboardStopped=true;
+    setText("mainStatus","Dashboard stopped");
+    setText("mainHelp","The COM port has been released. You can close this tab.");
+    setText("sourceBadge","SERVER STOPPED");
+    $("led").className="led";
+    $("calibrate").disabled=true;
+    setText("stopButton","Stopped");
+  }catch(error){
+    $("stopButton").disabled=false;
+    alert("Could not stop the dashboard: "+error.message);
+  }
+}
 $("scale").value=String(SCALE_DEFAULT);
 if($("scale").value!==String(SCALE_DEFAULT)){$("scale").value="8000";}
 setScale($("scale").value);
@@ -505,7 +548,7 @@ poll();
 """
 
 
-def create_app(reader, display_max: int = 8000) -> Flask:
+def create_app(reader, display_max: int = 8000, stop_callback=None) -> Flask:
     app = Flask(__name__)
 
     @app.get("/")
@@ -522,12 +565,40 @@ def create_app(reader, display_max: int = 8000) -> Flask:
             return jsonify(ok=True, message="Calibration command sent")
         return jsonify(ok=False, message="Sensor not connected or running in simulated demo mode"), 503
 
+    @app.post("/api/stop")
+    def stop_dashboard():
+        # Only allow the locally served app to request process shutdown.
+        # This also prevents a cross-site HTML form from stopping a running demo.
+        origin = request.headers.get("Origin", "")
+        if origin != request.host_url.rstrip("/"):
+            return jsonify(ok=False, message="Stop must be requested by this dashboard"), 403
+        if stop_callback is None:
+            return jsonify(ok=False, message="Dashboard stop is unavailable"), 503
+        threading.Thread(target=stop_callback, daemon=True).start()
+        return jsonify(ok=True, message="Stopping dashboard and releasing COM port")
+
     return app
+
+
+def find_sensorhub_port() -> Optional[str]:
+    """Discover the proven SensorHub application-mode VID:PID, not bootloader."""
+    matches = sorted(
+        p.device for p in list_ports.comports()
+        if p.vid == 0x239A and p.pid == 0x801B
+    )
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        print("Multiple SensorHub-like devices found:", ", ".join(matches))
+        print("Use --serial-port COMx to select a specific device.")
+        return None
+    return None
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="K.E.V.I.N. pressure presentation dashboard")
-    parser.add_argument("--serial-port", default="/dev/ttyACM0", help="Example: COM3 on Windows")
+    parser.add_argument("--serial-port", default="auto",
+                        help="COM3 or /dev/ttyACM0; default auto-detects SensorHub 239A:801B")
     parser.add_argument("--baud", type=int, default=115200)
     parser.add_argument("--host", default="127.0.0.1",
                         help="Loopback by default; use 0.0.0.0 only if LAN access is needed")
@@ -536,17 +607,52 @@ def main() -> None:
                         default=8000, help="Visual scale only; does not affect sensor or firmware")
     parser.add_argument("--demo", action="store_true",
                         help="Run clearly labeled simulated pressure patterns without hardware")
+    parser.add_argument("--open-browser", action="store_true",
+                        help="Open the dashboard in the default browser automatically")
     args = parser.parse_args()
 
-    reader = SimulatedPressureReader() if args.demo else SerialPressureReader(
-        args.serial_port, args.baud
-    )
+    if args.demo:
+        reader = SimulatedPressureReader()
+    else:
+        selected = find_sensorhub_port() if args.serial_port.lower() == "auto" else args.serial_port
+        if selected is None:
+            print("SensorHub application USB device (VID:PID 239A:801B) not found.")
+            print("Connect the SAMD21 or specify --serial-port COM3.")
+            print("Or use --demo for an explicitly labeled simulated presentation.")
+            raise SystemExit(2)
+        reader = SerialPressureReader(selected, args.baud)
+
+    server_ref = {"server": None}
+
+    def shutdown():
+        current = server_ref["server"]
+        if current is not None:
+            current.shutdown()
+
+    app = create_app(reader, args.display_max, stop_callback=shutdown)
+    try:
+        server = make_server(args.host, args.web_port, app, threaded=True)
+        server_ref["server"] = server
+    except OSError as exc:
+        print("Could not start local dashboard on port %d: %s" % (args.web_port, exc))
+        print("Is another copy of the dashboard still running?")
+        raise SystemExit(1)
+
     reader.start()
+
     print("K.E.V.I.N. pressure dashboard: "+("SIMULATED DEMO" if args.demo else "LIVE SENSOR"))
-    print("Open http://127.0.0.1:%d" % args.web_port)
-    create_app(reader, args.display_max).run(
-        host=args.host, port=args.web_port, debug=False, threaded=True
-    )
+    url = "http://127.0.0.1:%d" % args.web_port
+    print("Open "+url)
+    if args.open_browser:
+        threading.Thread(target=lambda: webbrowser.open(url), daemon=True).start()
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        reader.stop()
+        server.server_close()
+        print("Dashboard stopped; serial port released.")
 
 
 if __name__ == "__main__":
