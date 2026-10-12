@@ -307,7 +307,7 @@ summary{padding:17px 20px;cursor:pointer;font-weight:800}
     <div class="source" id="sourceBadge">CONNECTING TO SENSOR</div>
   </header>
   <div class="hero">
-    <div><h1>See the pressure change.</h1><p class="subtitle">Apply and release gentle pressure at the test sensor. Watch the direction, live response and recorded events.</p></div>
+    <div><h1>See the pressure change.</h1><p class="subtitle">Apply and release gentle test pressure. Watch the direction, live response and recorded events.</p></div>
     <div class="controls">
       <button id="calibrate" onclick="calibrate()">Calibrate sensor</button>
       <button class="secondary" onclick="clearGraph()">Clear graph</button>
@@ -326,13 +326,13 @@ summary{padding:17px 20px;cursor:pointer;font-weight:800}
   </div>
   <main class="grid">
     <section class="card measure positive" id="positiveCard">
-      <div class="cardhead"><div><div class="direction">Pressure increases</div><div class="description">Positive pressure · pressing the syringe</div></div><span class="live-led" aria-hidden="true"></span></div>
+      <div class="cardhead"><div><div class="direction">Pressure increases</div><div class="description">Positive pressure · sensor reading above baseline</div></div><span class="live-led" aria-hidden="true"></span></div>
       <div class="measurement"><span class="number" id="positiveNumber">0</span><span class="unit">raw ADC counts</span></div>
       <div class="track"><div class="fill" id="positiveFill"></div></div>
       <div class="foot"><span>Rest</span><span id="positiveScale">Display full scale: 8,000</span></div>
     </section>
     <section class="card measure negative" id="negativeCard">
-      <div class="cardhead"><div><div class="direction">Pressure decreases</div><div class="description">Negative pressure · pulling the syringe</div></div><span class="live-led" aria-hidden="true"></span></div>
+      <div class="cardhead"><div><div class="direction">Pressure decreases</div><div class="description">Negative pressure · sensor reading below baseline</div></div><span class="live-led" aria-hidden="true"></span></div>
       <div class="measurement"><span class="number" id="negativeNumber">0</span><span class="unit">raw ADC counts</span></div>
       <div class="track"><div class="fill" id="negativeFill"></div></div>
       <div class="foot"><span>Rest</span><span id="negativeScale">Display full scale: 8,000</span></div>
@@ -625,6 +625,8 @@ def main() -> None:
     server_ref = {"server": None}
 
     def shutdown():
+        # Let the HTTP response reach the browser before shutting down the server.
+        time.sleep(0.35)
         current = server_ref["server"]
         if current is not None:
             current.shutdown()
