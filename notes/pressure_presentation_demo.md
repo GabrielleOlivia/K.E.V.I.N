@@ -92,3 +92,26 @@ Never disconnect the board while PlatformIO is uploading firmware.
 
 The one-click launcher only exists on Windows as a `.cmd` file; Linux/Raspberry
 Pi users can continue launching the Python file from the shell.
+
+## Presentation-only quiet-at-rest view
+
+The **Quiet at rest: ON** button is enabled by default. When the pressure logger
+reports firmware state `IDLE` with a valid sample, the large visitor-facing
+positive/negative pressure numbers, fill bars, and waveform draw **0**. This
+removes distracting tiny resting fluctuations (such as the +68 raw-count
+residual seen in the 12 October screenshot) from the demonstration.
+
+**Important: the zero is a presentation value, not a claim that the real
+sensor raw delta is zero.** The unmodified `raw`, `baseline`, and signed
+`delta` continue to be available in the expandable **Engineering details**
+section and the `/api/state` JSON response. The firmware's event thresholds,
+calibration, serial protocol and measurement data are unchanged.
+
+Click **Quiet at rest: OFF** to see small actual resting fluctuations in the
+large indicators and live waveform again. Switching modes clears the graph so
+filtered and unfiltered readings are never mixed in one trace.
+
+If the SAMD21 stays in `POSITIVE_EVENT` or `NEGATIVE_EVENT` because an actual
+pressure offset persists, the demo view does **not** artificially force those
+active events back to rest. Investigate the sensor/airway test setup in that
+case instead of hiding the fault.
