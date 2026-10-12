@@ -300,7 +300,7 @@ summary{padding:17px 20px;cursor:pointer;font-weight:800}
       <div><b id="mainStatus">Waiting for SensorHub</b><p id="mainHelp">Connect the SAMD21 with a USB data cable.</p></div>
     </div>
     <div class="banner quickstat">
-      <div><div class="big" id="eventCount">—</div><div class="label">completed positive-pressure events</div></div>
+      <div><div class="big" id="eventCount">0</div><div class="label">new positive-pressure events this session</div></div>
     </div>
   </div>
   <main class="grid">
@@ -360,6 +360,8 @@ const horizon=25000;
 let displayScale=SCALE_DEFAULT;
 let lastTimestamp=null;
 let calibrateCooldown=false;
+let eventCounterStart=null;
+let previousEventCount=null;
 const $ = id => document.getElementById(id);
 const fmt = v => v === null || v === undefined ? "—" : Number(v).toLocaleString("en-US");
 const setText=(id,value)=>{$(id).textContent=value;};
@@ -440,7 +442,13 @@ function updateUI(s){
   setText("mainHelp",help);
   $("led").className="led "+led;
   setText("activity",activity);
-  setText("eventCount",fmt(s.candidate_count));
+  // The SAMD21's lifetime count persists across dashboard sessions.
+  // Show only new events since this browser page was opened.
+  if(eventCounterStart===null || (previousEventCount!==null && s.candidate_count<previousEventCount)){
+    eventCounterStart=s.candidate_count;
+  }
+  previousEventCount=s.candidate_count;
+  setText("eventCount",fmt(Math.max(0,s.candidate_count-eventCounterStart)));
   setText("lastPositive",s.last_positive_peak === null?"—":"+"+fmt(s.last_positive_peak));
   setText("lastNegative",s.last_negative_peak === null?"—":"−"+fmt(s.last_negative_peak));
 
