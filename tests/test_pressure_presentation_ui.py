@@ -58,6 +58,20 @@ class PressurePresentationTests(unittest.TestCase):
         self.assertTrue(snapshot["data_fresh"])
         self.assertFalse(reader.recalibrate())
 
+    def test_presentation_filter_is_labeled_and_raw_api_is_unmodified(self):
+        reader = SerialPressureReader("UNUSED")
+        reader.handle_line("1000,2588,2520,68,IDLE,5,1,1")
+        app = create_app(reader)
+        client = app.test_client()
+        html = client.get("/").get_data(as_text=True)
+        self.assertIn("Quiet at rest: ON", html)
+        self.assertIn('s.firmware_state==="IDLE" ? 0 : s.delta', html)
+        self.assertIn("Engineering details", html)
+        raw_state = client.get("/api/state").json
+        # Presentation filter runs only in the browser; API remains real data.
+        self.assertEqual(raw_state["delta"], 68)
+        self.assertEqual(raw_state["raw"], 2588)
+
     def test_demo_api_and_calibration_disabled(self):
         app = create_app(SimulatedPressureReader())
         client = app.test_client()
