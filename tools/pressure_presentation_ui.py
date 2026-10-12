@@ -310,6 +310,7 @@ summary{padding:17px 20px;cursor:pointer;font-weight:800}
     <div><h1>See the pressure change.</h1><p class="subtitle">Apply and release gentle test pressure. Watch the direction, live response and recorded events.</p></div>
     <div class="controls">
       <button id="calibrate" onclick="calibrate()">Calibrate sensor</button>
+      <button class="secondary" id="quietButton" onclick="toggleQuietAtRest()" aria-pressed="true" title="Show zero in presentation view when the firmware is IDLE. Engineering readings remain unchanged.">Quiet at rest: ON</button>
       <button class="secondary" onclick="clearGraph()">Clear graph</button>
       <button class="secondary" onclick="toggleFullscreen()">Full screen</button>
       <button class="secondary" id="stopButton" onclick="stopDashboard()">Stop dashboard</button>
@@ -327,13 +328,13 @@ summary{padding:17px 20px;cursor:pointer;font-weight:800}
   <main class="grid">
     <section class="card measure positive" id="positiveCard">
       <div class="cardhead"><div><div class="direction">Pressure increases</div><div class="description">Positive pressure · sensor reading above baseline</div></div><span class="live-led" aria-hidden="true"></span></div>
-      <div class="measurement"><span class="number" id="positiveNumber">0</span><span class="unit">raw ADC counts</span></div>
+      <div class="measurement"><span class="number" id="positiveNumber">0</span><span class="unit">display counts</span></div>
       <div class="track"><div class="fill" id="positiveFill"></div></div>
       <div class="foot"><span>Rest</span><span id="positiveScale">Display full scale: 8,000</span></div>
     </section>
     <section class="card measure negative" id="negativeCard">
       <div class="cardhead"><div><div class="direction">Pressure decreases</div><div class="description">Negative pressure · sensor reading below baseline</div></div><span class="live-led" aria-hidden="true"></span></div>
-      <div class="measurement"><span class="number" id="negativeNumber">0</span><span class="unit">raw ADC counts</span></div>
+      <div class="measurement"><span class="number" id="negativeNumber">0</span><span class="unit">display counts</span></div>
       <div class="track"><div class="fill" id="negativeFill"></div></div>
       <div class="foot"><span>Rest</span><span id="negativeScale">Display full scale: 8,000</span></div>
     </section>
@@ -350,7 +351,8 @@ summary{padding:17px 20px;cursor:pointer;font-weight:800}
       </label>
     </div>
     <canvas id="wave" aria-label="Live graph of positive and negative raw pressure deviations"></canvas>
-    <div class="muted">This scale changes the display only. It does not change sensor sensitivity or the firmware's detection threshold.</div>
+    <div class="muted" id="quietExplanation">Quiet-at-rest is ON: when firmware reports IDLE, the presentation indicators and graph display zero. Actual signed ADC delta stays available in Engineering details. This is display-only; sensor measurements and event detection are unchanged.</div>
+    <div class="muted" style="margin-top:6px">The scale changes only the display, not sensor sensitivity or the firmware's event threshold.</div>
   </section>
   <section class="summary">
     <div class="card"><div class="section-label">Current activity</div><div class="value" id="activity">Waiting</div></div>
@@ -381,6 +383,8 @@ const horizon=25000;
 let displayScale=SCALE_DEFAULT;
 let lastTimestamp=null;
 let calibrateCooldown=false;
+let quietAtRest=true; // Presentation-only display filtering; NEVER changes serial or calibration.
+let lastReading=null;
 let dashboardStopped=false;
 let eventCounterStart=null;
 let previousEventCount=null;
@@ -395,6 +399,22 @@ function setScale(v){
   renderGraph();
 }
 function clearGraph(){graph.length=0;lastTimestamp=null;renderGraph();}
+function displayDelta(s){
+  // Use detector state for visitor-visible quiet state. Preserve untouched raw
+  // readings in the Engineering details section and the Flask /api/state feed.
+  if(!s || !s.data_fresh || !s.sample_ok || !s.baseline_ok || s.delta===null)return null;
+  return quietAtRest && s.firmware_state==="IDLE" ? 0 : s.delta;
+}
+function toggleQuietAtRest(){
+  quietAtRest=!quietAtRest;
+  $("quietButton").textContent="Quiet at rest: "+(quietAtRest?"ON":"OFF");
+  $("quietButton").setAttribute("aria-pressed",String(quietAtRest));
+  $("quietExplanation").textContent=quietAtRest
+    ? "Quiet-at-rest is ON: when firmware reports IDLE, the presentation indicators and graph display zero. Actual signed ADC delta stays available in Engineering details. This is display-only; sensor measurements and event detection are unchanged."
+    : "Quiet-at-rest is OFF: indicators and graph show the actual signed raw ADC difference, including small fluctuations at rest.";
+  clearGraph(); // Prevent a single waveform mixing filtered and raw display modes.
+  if(lastReading)updateUI(lastReading);
+}
 function toggleFullscreen(){
   if(document.fullscreenElement){document.exitFullscreen();}
   else if(document.documentElement.requestFullscreen){document.documentElement.requestFullscreen();}
@@ -404,11 +424,12 @@ function paintCard(id,fill,value,active){
   $(fill).style.width=(Math.min(100,Math.max(0,100*value/displayScale)))+"%";
 }
 function addPoint(s) {
-  if(s.t_ms === null || s.t_ms === undefined || s.delta === null || !s.sample_ok || !s.baseline_ok || !s.data_fresh) return;
+  const deltaForDisplay=displayDelta(s);
+  if(s.t_ms === null || s.t_ms === undefined || deltaForDisplay===null) return;
   if(lastTimestamp !== null && s.t_ms < lastTimestamp){clearGraph();}
   if(s.t_ms === lastTimestamp)return;
   lastTimestamp=s.t_ms;
-  graph.push({t:Date.now(),y:s.delta});
+  graph.push({t:Date.now(),y:deltaForDisplay});
   const oldest=Date.now()-horizon;
   while(graph.length && graph[0].t < oldest)graph.shift();
 }
@@ -445,6 +466,7 @@ function renderGraph(){
   }
 }
 function updateUI(s){
+  lastReading=s;
   const simulated=Boolean(s.demo_mode);
   $("sourceBadge").classList.toggle("demo",simulated);
   setText("sourceBadge",simulated?"SIMULATED DEMO · NO SENSOR":s.connected?"LIVE SENSOR · "+s.port:"SENSOR NOT CONNECTED");
@@ -474,9 +496,10 @@ function updateUI(s){
   setText("lastPositive",s.last_positive_peak === null?"—":"+"+fmt(s.last_positive_peak));
   setText("lastNegative",s.last_negative_peak === null?"—":"−"+fmt(s.last_negative_peak));
 
-  const valid=s.connected&&s.data_fresh&&s.baseline_ok&&s.sample_ok&&s.delta!==null;
-  const positive=valid?Math.max(0,s.delta):0;
-  const negative=valid?Math.max(0,-s.delta):0;
+  const filteredDelta=displayDelta(s);
+  const valid=s.connected&&filteredDelta!==null;
+  const positive=valid?Math.max(0,filteredDelta):0;
+  const negative=valid?Math.max(0,-filteredDelta):0;
   setText("positiveNumber",fmt(positive));
   setText("negativeNumber",fmt(negative));
   paintCard("positiveCard","positiveFill",positive,valid&&positive>200);
