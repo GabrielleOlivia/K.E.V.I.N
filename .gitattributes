@@ -1,0 +1,3 @@
+# Preserve the exact upstream pressure-logging firmware bytes across Linux and Windows checkouts.
+# The upstream SHA manifest checks Git blob hashes; CRLF conversion would invalidate them.
+integration/firmware/pressure_legacy/** -text
