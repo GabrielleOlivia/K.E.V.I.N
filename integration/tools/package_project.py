@@ -14,7 +14,7 @@ def files():
 
 inventory = '\n'.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.relative_to(root).as_posix() for p in files())+'\n'
 (root/'SHA256SUMS.txt').write_text(inventory, encoding='utf-8')
-output = root.parent/'KEVIN_Sensor_Integration_v0.3.1.zip'
+output = root.parent/'KEVIN_Sensor_Integration_v0.4.0.zip'
 with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED) as archive:
     for p in files()+[root/'SHA256SUMS.txt']:
         archive.write(p, (Path(root.name)/p.relative_to(root)).as_posix())

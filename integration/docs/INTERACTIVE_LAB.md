@@ -19,7 +19,7 @@ Open `http://127.0.0.1:8765`. The browser shows six test channels, an overall co
 The global panel supports:
 
 - **Pause/resume all simulated streams**, allowing timeout and recovery testing without altering real sources.
-- **Scenario selection:** `normal` or `demo`. Switching resets only the selected fault-scenario timeline. `demo` causes a head-message delay near 3–4 seconds, SpO2 silence near 4–11 seconds, and invalid pressure readings near 6–8 seconds.
+- **Scenario selection:** `normal`, `demo`, `cardiac_arrest`, `vf_arrest`, `respiratory_arrest`, `airway_partial`, `airway_complete`, `bradycardia`, or `hypoxia`. Switching resets only the selected fault-scenario timeline. `demo` causes a head-message delay near 3–4 seconds, SpO2 silence near 4–11 seconds, and invalid pressure readings near 6–8 seconds.
 - **Reset manual values** to clear test overrides.
 
 ## Tomorrow: mixed mode
@@ -40,3 +40,16 @@ node --check kevin/web/app.js
 ```
 
 `tests/test_interactive_controls.py` validates manual overrides, quaternion normalization, synthetic pause/timeout/recovery, scenario reinitialization, API input validation, invalid tokens and controls limited to the simulation owner. The JavaScript syntax check does not validate rendering. `tools/verify_dashboard.py` can check real browser behavior on a machine with unrestricted Chromium loopback access.
+
+## Patient scenario lab (v0.4.0)
+
+A separate synthetic patient panel supports cardiac arrest (asystole or ventricular fibrillation), respiratory arrest, partial/complete airway obstruction, low heart rate, and low saturation. The panel has a stylized electrical heart trace and four **fictional** metrics (heart rate, spontaneous respiratory rate, SpO2 target and airflow proxy). These are not physical measurements or a validated physiology/ECG model.
+
+- **Airway slider (0–100%)** changes a fictional resistance proxy. **Open airway** sets it to zero. **Use scenario default** clears the override. Physical sensors are never affected.
+- **Start bag ventilation** adds synthetic bag-pressure pulses and synthetic airflow when the fictional airway is open, but it does not restore spontaneous breathing.
+- **Start chest compressions** adds synthetic compression-force pulses but never restores the simulated heart rate.
+- Selecting a new patient preset resets interventions and patient-dependent pressure/SpO2/CPR manual overrides. Independent head/chest orientation overrides are retained.
+- The original individual sensor stream toggle, pause and raw-value sliders still work. A manual pressure, CPR, or SpO2 slider explicitly overrides the scenario-generated synthetic channel until cleared.
+- In mixed mode, a physical pressure adapter remains independent; scenario controls **cannot** overwrite it. Do not compare the fictional airflow proxy to real delivered air volume.
+
+See [patient scenarios and limitations](PATIENT_SCENARIOS.md) and run `python -m unittest discover -s tests -v` to exercise the scenario boundary.

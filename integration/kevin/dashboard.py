@@ -31,6 +31,7 @@ def create_server(service, simulator=None, host='127.0.0.1', port=8765):
             if self.path == '/api/state':
                 state = service.snapshot()
                 state['simulation_control'] = {'token':token, **simulator.control_state()} if simulator else None
+                state['simulated_patient'] = simulator.patient_snapshot() if simulator else None
                 return self.reply(200,state)
             files = {'/':('index.html','text/html; charset=utf-8'),
                      '/app.js':('app.js','text/javascript; charset=utf-8'),
@@ -63,6 +64,10 @@ def create_server(service, simulator=None, host='127.0.0.1', port=8765):
                     simulator.set_scenario(data['scenario'])
                 elif set(data) == {'action','sensor_id','value'} and data['action'] == 'override':
                     simulator.set_override(data['sensor_id'],data['value'])
+                elif set(data) == {'action','percent'} and data['action'] == 'airway':
+                    simulator.set_airway_obstruction(data['percent'])
+                elif set(data) == {'action','kind','enabled'} and data['action'] == 'intervention':
+                    simulator.set_intervention(data['kind'],data['enabled'])
                 else:
                     raise ValueError('unsupported simulation control')
                 service.record('simulation_control', control=data)

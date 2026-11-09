@@ -1,6 +1,7 @@
 'use strict';
 // Browser controls affect ONLY simulated sensor sources on localhost.
 const cards = new Map(), history = new Map();
+let scenarioOptionsLoaded = false;
 let token = null, busy = false, commandPending = 0;
 const el = (tag, cls, text) => {const e = document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e;};
 const $ = (id) => document.getElementById(id);
@@ -33,13 +34,23 @@ function graph(canvas,points){
  const valid=points.filter(p=>Number.isFinite(p));if(!valid.length)return;let low=Math.min(...valid),high=Math.max(...valid);if(low===high){low-=1;high+=1;}
  ctx.strokeStyle='#314762';ctx.beginPath();ctx.moveTo(0,h-12*dpr);ctx.lineTo(w,h-12*dpr);ctx.stroke();ctx.fillStyle='#8baccb';ctx.font=`${10*dpr}px system-ui`;ctx.fillText(high.toFixed(1),0,12*dpr);
  ctx.strokeStyle='#71dec9';ctx.lineWidth=2*dpr;ctx.beginPath();let drawing=false;
- points.forEach((p,i)=>{if(!Number.isFinite(p)){drawing=false;return;}const x=i/119*w,y=h-12*dpr-(p-low)/(high-low)*(h-32*dpr);if(!drawing){ctx.moveTo(x,y);drawing=true;}else ctx.lineTo(x,y);});ctx.stroke();
+ points.forEach((p,i)=>{if(!Number.isFinite(p)){drawing=false;return;}const x=i/Math.max(1,points.length-1)*w,y=h-12*dpr-(p-low)/(high-low)*(h-32*dpr);if(!drawing){ctx.moveTo(x,y);drawing=true;}else ctx.lineTo(x,y);});ctx.stroke();
 }
 function updateControlState(ctrl){
- if(!ctrl){$('mode').textContent='PHYSICAL / REPLAY — read only';$('pause').disabled=true;$('reset-overrides').disabled=true;$('scenario').disabled=true;note('Only simulated inputs can be controlled.');return;}
+ if(!ctrl){$('mode').textContent='PHYSICAL / REPLAY — read only';$('pause').disabled=true;$('reset-overrides').disabled=true;$('scenario').disabled=true;$('airway-slider').disabled=true;$('airway-open').disabled=true;$('airway-auto').disabled=true;$('ventilate').disabled=true;$('compressions').disabled=true;note('Only simulated inputs can be controlled.');return;}
+ if(!scenarioOptionsLoaded&&ctrl.scenarios){
+  $('scenario').replaceChildren(...ctrl.scenarios.map(scene=>{const o=el('option',null,scene.label);o.value=scene.id;return o;}));
+  scenarioOptionsLoaded=true;
+ }
  $('mode').textContent='SIMULATION ENABLED';$('pause').disabled=false;$('reset-overrides').disabled=false;$('scenario').disabled=false;
  if(document.activeElement!==$('scenario')&&!commandPending)$('scenario').value=ctrl.scenario;
  $('pause').textContent=ctrl.paused?'Resume all simulated streams':'Pause all simulated streams';$('pause').dataset.paused=String(ctrl.paused);
+ $('airway-slider').disabled=false;$('airway-open').disabled=false;$('airway-auto').disabled=ctrl.airway_override===null;
+ $('ventilate').disabled=false;$('compressions').disabled=false;
+ $('ventilate').textContent=ctrl.ventilation_on?'Stop bag ventilation':'Start bag ventilation';
+ $('compressions').textContent=ctrl.compressions_on?'Stop chest compressions':'Start chest compressions';
+ $('ventilate').dataset.active=String(ctrl.ventilation_on);$('compressions').dataset.active=String(ctrl.compressions_on);
+ $('ventilate').setAttribute('aria-pressed',String(ctrl.ventilation_on));$('compressions').setAttribute('aria-pressed',String(ctrl.compressions_on));
  for(const [id,c] of cards){
   const available=ctrl.available.includes(id);c.label.hidden=!available;c.manual.hidden=!available||!ctrl.limits?.[id];
   if(!available)continue;
@@ -56,6 +67,43 @@ function updateControlState(ctrl){
 }
 $('pause').addEventListener('click',async()=>{const paused=$('pause').dataset.paused!=='true';try{await command({action:'pause',paused});note(paused?'All synthetic streams paused; watch sensor states time out':'Synthetic streams resumed');}catch(e){note(e.message,true);}});
 $('scenario').addEventListener('change',async()=>{try{await command({action:'scenario',scenario:$('scenario').value});note('Fault timeline restarted for '+$('scenario').value+' scenario');}catch(e){note(e.message,true);}});
+$('airway-slider').addEventListener('input',()=>{$('airway-reading').textContent=$('airway-slider').value+'%';});
+$('airway-slider').addEventListener('change',async()=>{
+ const percent=Number($('airway-slider').value);
+ try{await command({action:'airway',percent});note('Fictional airway restriction set to '+percent+'%');}
+ catch(e){note(e.message,true);}
+});
+$('airway-open').addEventListener('click',async()=>{
+ try{await command({action:'airway',percent:0});note('Fictional airway opened (0% restriction)');}
+ catch(e){note(e.message,true);}
+});
+$('airway-auto').addEventListener('click',async()=>{
+ try{await command({action:'airway',percent:null});note('Restored airway restriction set by scenario preset');}
+ catch(e){note(e.message,true);}
+});
+for(const [button,kind] of [['ventilate','ventilation'],['compressions','compressions']]){
+ $(button).addEventListener('click',async()=>{
+  const enabled=$(button).dataset.active!=='true';
+  try{await command({action:'intervention',kind,enabled});note('Synthetic '+kind+(enabled?' activated':' stopped'));}
+  catch(e){note(e.message,true);}
+ });
+}
+function renderPatient(patient,ctrl){
+ if(!patient){$('patient-title').textContent='Patient simulation unavailable';return;}
+ $('patient-title').textContent=patient.name;
+ $('patient-description').textContent=patient.description;
+ $('patient-clock').textContent=patient.elapsed_s.toFixed(1)+' s';
+ $('vital-hr').textContent=patient.heart_rate_bpm;
+ $('vital-rr').textContent=patient.spontaneous_resp_rate_bpm;
+ $('vital-spo2').textContent=patient.spo2_target_percent.toFixed(1);
+ $('vital-flow').textContent=patient.airflow_proxy_percent.toFixed(0);
+ $('rhythm-label').textContent=patient.rhythm==='sinus_like'?'STYLIZED SINUS':patient.rhythm==='vf'?'VENTRICULAR FIBRILLATION':'ASYSTOLE';
+ graph($('ecg'),patient.ecg_preview);
+ if(ctrl&&document.activeElement!==$('airway-slider')&&!commandPending){
+  $('airway-slider').value=patient.airway_obstruction_percent;
+  $('airway-reading').textContent=patient.airway_obstruction_percent.toFixed(0)+'%'+(patient.airway_override_active?' · manual':'');
+ }
+}
 $('reset-overrides').addEventListener('click',async()=>{try{const ids=[...cards].filter(([id,c])=>!c.manual.hidden).map(([id])=>id);for(const id of ids)await command({action:'override',sensor_id:id,value:null});note('All synthetic waveforms restored');}catch(e){note(e.message,true);}});
 async function poll(){
  if(busy)return;busy=true;const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),2000);
@@ -69,11 +117,12 @@ async function poll(){
    const h=history.get(id);h.push(data.valid?(Array.isArray(v)?v[0]:v):null);if(h.length>120)h.shift();graph(c.canvas,h);
   }
   updateControlState(s.simulation_control);
+  renderPatient(s.simulated_patient,s.simulation_control);
   const d=s.derived.relative_rotation_deg;$('derived').textContent=d.valid?d.value.toFixed(2)+'°'+(d.simulated?' · SIMULATED':''):d.reason;
   $('counters').textContent=Object.entries(s.diagnostics).map(([k,v])=>k+': '+v).join(' · ')||'No diagnostics yet';
   $('events').textContent=s.events.slice(-12).reverse().map(e=>e.code+' — '+e.detail).join('\n')||'No events';
  }catch(e){token=null;$('connection').textContent='HOST DISCONNECTED — readings unavailable';$('connection').className='offline';
-  $('pause').disabled=true;$('scenario').disabled=true;$('reset-overrides').disabled=true;
+  $('pause').disabled=true;$('scenario').disabled=true;$('reset-overrides').disabled=true;$('airway-slider').disabled=true;$('airway-open').disabled=true;$('airway-auto').disabled=true;$('ventilate').disabled=true;$('compressions').disabled=true;
   for(const [id,c] of cards){c.value.textContent='—';c.badge.textContent='host offline';c.badge.className='badge bad';c.toggle.disabled=true;c.slider.disabled=true;c.reset.disabled=true;const h=history.get(id);h.push(null);if(h.length>120)h.shift();graph(c.canvas,h);}
  }finally{clearTimeout(timeout);busy=false;}
 }

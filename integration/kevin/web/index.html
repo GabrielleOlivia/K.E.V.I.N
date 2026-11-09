@@ -10,18 +10,48 @@
 </head>
 <body>
 <header class="topbar">
-  <div class="brand"><div class="brand-mark">K</div><div><p class="eyebrow">HAN · EMBEDDED SYSTEMS ENGINEERING</p><h1>K.E.V.I.N. <span class="muted">/ Integration Lab</span></h1><p class="subtitle">Six channels · one integration system · synthetic bench testing</p></div></div>
+  <div class="brand"><div class="brand-mark">K</div><div><p class="eyebrow">HAN · EMBEDDED SYSTEMS ENGINEERING</p><h1>K.E.V.I.N. <span class="muted">/ Integration Lab</span></h1><p class="subtitle">Six channels · interactive patient scenarios · synthetic bench testing</p></div></div>
   <div class="status-wrap"><span class="status-dot" aria-hidden="true"></span><span id="connection" role="status" aria-live="polite">Connecting…</span></div>
 </header>
 <main>
-  <aside class="notice"><strong>Training simulator — no clinical use.</strong> All virtual signals are synthetic test fixtures, not patient measurements. Pressure ADC counts do not establish delivered air volume. Relative IMU rotation does not establish anatomical neck angle.</aside>
+  <aside class="notice"><strong>Training simulator — no clinical use.</strong> All virtual signals are synthetic test fixtures, not patient measurements. Cardiac and respiratory scenario values are fictional, not medical predictions. Pressure ADC counts do not establish delivered air volume. Relative IMU rotation does not establish anatomical neck angle.</aside>
   <section class="lab-toolbar panel" aria-label="Simulation controls">
     <div class="tool-head"><div><p class="eyebrow">VIRTUAL SENSOR LAB</p><h2>Experiment controls</h2><p>Test integration behavior before connecting hardware. Controls cannot change physical sensors.</p></div><span id="mode" class="mode">Loading…</span></div>
     <div class="toolbar-grid">
-      <div class="control"><label for="scenario">Test scenario</label><select id="scenario"><option value="normal">Normal — no scheduled faults</option><option value="demo">Fault demonstration — delays, dropouts, ADC faults</option></select><small>Changing scenario restarts its fault timeline, not the sensor nodes.</small></div>
+      <div class="control"><label for="scenario">Test scenario</label><select id="scenario" aria-describedby="scenario-describe"><option value="normal">Normal training baseline</option></select><small id="scenario-describe">Scenarios change only synthetic patient behavior. Switching resets intervention switches and relevant manual sensor values.</small></div>
       <div class="control"><label>Virtual streams</label><div class="actions"><button id="pause" type="button" class="primary">Pause all simulated streams</button><button id="reset-overrides" type="button">Reset manual values</button></div><small>Paused streams become stale and eventually disconnected.</small></div>
     </div>
     <p id="control-status" class="control-status" role="status" aria-live="polite">Loading available controls…</p>
+  </section>
+  <section class="panel patient-lab" aria-label="Synthetic patient scenarios">
+    <div class="scenario-header">
+      <div><p class="eyebrow">SIMULATED PATIENT — TRAINING ONLY</p><h2 id="patient-title">Loading patient scenario…</h2><p id="patient-description" class="scene-description">Operator-authored test signals, not measured physiology.</p></div>
+      <div class="scene-clock"><span>SCENARIO TIME</span><strong id="patient-clock">0.0 s</strong></div>
+    </div>
+    <div class="patient-vitals">
+      <div class="vital"><span>HEART RATE</span><strong id="vital-hr">—</strong><small>bpm · fictional</small></div>
+      <div class="vital"><span>SPONTANEOUS RESPIRATIONS</span><strong id="vital-rr">—</strong><small>breaths/min · fictional</small></div>
+      <div class="vital"><span>OXYGEN SATURATION</span><strong id="vital-spo2">—</strong><small>% · scenario target</small></div>
+      <div class="vital"><span>AIRFLOW PROXY</span><strong id="vital-flow">—</strong><small>% · not measured flow/volume</small></div>
+    </div>
+    <div class="scenario-workbench">
+      <div class="scene-ecg">
+        <div class="ecg-head"><strong>Illustrative heart rhythm</strong><span id="rhythm-label">—</span></div>
+        <canvas id="ecg" width="640" height="130" aria-label="Decorative synthetic heart waveform" role="img"></canvas>
+        <small>Conceptual trace only: not calibrated ECG, and not connected to a medical monitor. VF and asystole are distinct arrest demonstrations.</small>
+      </div>
+      <div class="scenario-actions">
+        <div class="airway-control"><div class="airway-label"><label for="airway-slider">Pinch / airway restriction</label><strong id="airway-reading">0%</strong></div>
+          <input id="airway-slider" type="range" min="0" max="100" step="5" value="0" aria-label="Synthetic airway restriction percentage">
+          <div class="range-ends"><span>Open</span><span>Blocked</span></div>
+          <div class="actions"><button id="airway-open" type="button">Open airway (0%)</button><button id="airway-auto" type="button">Use scenario default</button></div>
+          <small>Changes fictional airway resistance and pressure/airflow proxies, not physical pneumatic hardware.</small></div>
+        <div class="intervention-control"><span class="intervention-title">SIMULATED OPERATOR ACTIONS</span>
+          <div class="actions"><button id="ventilate" type="button" aria-pressed="false">Start bag ventilation</button><button id="compressions" type="button" aria-pressed="false">Start chest compressions</button></div>
+          <small>These create test waveforms only. They do not claim treatment success or automatically restore circulation.</small>
+        </div>
+      </div>
+    </div>
   </section>
   <div class="section-title"><div><p class="eyebrow">LIVE CHANNELS</p><h2>Sensor readings</h2></div><span class="hint">Plots use the latest 120 received views. Missing samples break the line.</span></div>
   <section id="cards" aria-label="Sensor channels"></section>

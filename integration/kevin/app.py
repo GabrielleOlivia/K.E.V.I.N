@@ -61,7 +61,8 @@ def parser():
     p.add_argument('--mode', choices=['simulate','physical','mixed','replay'], default='simulate')
     p.add_argument('--registry',help='JSON registry; defaults to bundled six sensors')
     p.add_argument('--disable',default='',help='comma-separated simulated sensor IDs')
-    p.add_argument('--scenario',choices=['normal','demo'],default='normal')
+    from .simulation.patient import SCENARIOS
+    p.add_argument('--scenario',choices=sorted(SCENARIOS),default='normal')
     p.add_argument('--seed',type=int,default=7)
     p.add_argument('--pressure-port',help='existing CSV firmware port, e.g. COM3 or /dev/ttyACM0')
     p.add_argument('--jsonl-port',action='append',default=[],metavar='NODE=PORT',help='repeat for additional protocol v1 nodes')

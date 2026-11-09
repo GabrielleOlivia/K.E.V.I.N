@@ -72,3 +72,12 @@ The optional script checks six cards, disabling/re-enabling a simulated stream, 
 No SAMD21 upload or physical USB read; no live MCP3426/I2C timing or fault injection; no pressure-reference calibration; no IMU identification/vendor firmware/fusion validation; no physical head/chest synchronization or mounting calibration; no real CPR, temperature or optical sensing; no CAN controller/transceiver/bus-off test; no long-duration load, power-loss endurance, clinical or physiological validation. Windows and Raspberry Pi OS execution must be checked on their actual targets. Compilation is not hardware validation.
 
 The optional CI workflow covers Python 3.10 and 3.12 on Linux and Windows when adopted into a repository. It has not been pushed or run on GitHub in this task.
+
+## v0.4.0 patient scenario lab (2026-11-09)
+
+- Added pure synthetic patient scenario presets for asystole/VF cardiac arrest, respiratory arrest, airway restriction/occlusion, low heart rate and low oxygen-saturation targets, plus the original fault demo.
+- Added independent simulated-patient JSON state to the dashboard API. Physical sensor feeds remain separate and cannot be changed by simulation controls.
+- Added airway restriction, synthetic bag ventilation and synthetic CPR force controls. New tests include value validation, API authorization, scenario transitions and physical input ownership.
+- **Local result:** 89 Python tests executed, 88 passed, one POSIX/serial optional test skipped; JavaScript syntax check passed; independent live HTTP smoke test passed. The benign `LOGGING FAILED` diagnostic printed in the suite is expected from an intentional logger-failure test.
+- **Browser visual end-to-end test:** Not completed; this environment blocks Chromium from opening localhost (`ERR_BLOCKED_BY_ADMINISTRATOR`). The supplied Playwright script remains available to run in an unrestricted local browser environment.
+- **Physical hardware and clinical behavior:** Not tested. All vital curves and restrictions are synthetic training illustrations, not neonatal physiology and not validated against a test lung or medical monitor.

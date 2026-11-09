@@ -4,6 +4,7 @@ import random
 import threading
 from ..protocol import Message, encode
 from .sensors import GENERATORS
+from .patient import SCENARIOS, patient_state, pressure_proxy, cpr_proxy, ecg_trace
 
 
 class Simulator:
@@ -13,14 +14,18 @@ class Simulator:
         unknown = self.enabled - GENERATORS.keys()
         if unknown:
             raise ValueError('no simulator for: '+','.join(sorted(unknown)))
-        self.randoms = {sid:random.Random(str(seed)+':'+sid) for sid in self.enabled}
-        if scenario not in ('normal', 'demo'):
+        self.randoms = {sid:random.Random(str(seed)+':'+sid) for sid in self.specs}
+
+        if scenario not in SCENARIOS:
             raise ValueError('unknown simulation scenario')
         self.scenario = scenario
         self.start = service.manager.clock()
         self.scenario_start = self.start
         self.paused = False
         self.overrides = {}
+        self.airway_override = None
+        self.compressions_on = False
+        self.ventilation_on = False
         # Engineering DEMO controls only, not patient safety or clinical limits.
         self.manual_limits = {
             'pressure': (-600, 900, 1, 'ADC counts'),
@@ -39,6 +44,11 @@ class Simulator:
         with self.lock:
             return {'enabled':sorted(self.enabled), 'available':sorted(self.specs),
                     'paused':self.paused, 'scenario':self.scenario,
+                    'scenarios': [{'id':sid,'label':label,'description':desc}
+                                  for sid,(label,desc) in SCENARIOS.items()],
+                    'airway_override':self.airway_override,
+                    'compressions_on':self.compressions_on,
+                    'ventilation_on':self.ventilation_on,
                     'scenario_elapsed_s':max(0, self.service.manager.clock()-self.scenario_start),
                     'overrides':dict(self.overrides),
                     'limits':{sid:{'min':lo,'max':hi,'step':step,'label':label}
@@ -65,13 +75,43 @@ class Simulator:
                 self.delayed.clear()
 
     def set_scenario(self, scenario):
-        if scenario not in ('normal', 'demo'):
+        if scenario not in SCENARIOS:
             raise ValueError('unknown simulation scenario')
         with self.lock:
             self.scenario = scenario
             self.scenario_start = self.service.manager.clock()
+            self.airway_override = None
+            self.compressions_on = False
+            self.ventilation_on = False
+            for sid in ('pressure', 'spo2', 'cpr'):
+                self.overrides.pop(sid, None)
             # In-flight delayed samples from an old scenario are not meaningful.
             self.delayed.clear()
+
+    def set_airway_obstruction(self, percent):
+        if percent is not None and (type(percent) not in (int, float) or
+                                    not math.isfinite(percent) or not 0 <= percent <= 100):
+            raise ValueError('airway obstruction must be 0..100 or null')
+        with self.lock:
+            self.airway_override = float(percent) if percent is not None else None
+
+    def set_intervention(self, kind, enabled):
+        if kind not in ('compressions', 'ventilation') or type(enabled) is not bool:
+            raise ValueError('invalid simulated intervention')
+        with self.lock:
+            if kind == 'compressions':
+                self.compressions_on = enabled
+            else:
+                self.ventilation_on = enabled
+
+    def patient_snapshot(self):
+        with self.lock:
+            now = self.service.manager.clock()
+            elapsed = max(0, now-self.scenario_start)
+            state = patient_state(self.scenario,elapsed,self.airway_override,
+                                  self.compressions_on,self.ventilation_on)
+            state['ecg_preview'] = ecg_trace(max(0,now-self.start), state)
+            return state
 
     def set_override(self, sid, value):
         if sid not in self.specs or sid not in self.manual_limits:
@@ -114,6 +154,8 @@ class Simulator:
             # behavior to be exercised by the existing integration manager.
             if self.paused:
                 return
+            patient = patient_state(self.scenario,scenario_elapsed,self.airway_override,
+                                    self.compressions_on,self.ventilation_on)
             # In the demo, stale first and then fully disconnected; automatic recovery.
             disconnected = 4 <= scenario_elapsed < 11 and self.scenario == 'demo'
             for sid in sorted(self.enabled):
@@ -132,6 +174,17 @@ class Simulator:
                     # mapping is known exactly; do not copy it to independent MCUs.
                     self.service.manager.install_time_mapping(node,self.sessions[node],self.start,0,86400)
                 value, meta = GENERATORS[sid](elapsed, self.randoms[sid])
+                if sid == 'pressure':
+                    value = pressure_proxy(elapsed, patient, self.randoms[sid])
+                    meta = {'model':'fictional airway-pressure ADC excursion',
+                            'scenario':self.scenario,'airflow_proxy_percent':patient['airflow_proxy_percent']}
+                elif sid == 'cpr':
+                    value = cpr_proxy(elapsed, patient)
+                    meta = {'model':'fictional compression-force excursion', 'compressions_on':self.compressions_on}
+                elif sid == 'spo2':
+                    value = patient['spo2_target_percent'] + self.randoms[sid].uniform(-0.15,0.15)
+                    value = max(0,min(100,round(value,2)))
+                    meta = {'model':'operator-authored synthetic saturation curve','scenario':self.scenario}
                 if sid in self.overrides:
                     fixed = self.overrides[sid]
                     if sid in ('head_imu', 'chest_imu'):

@@ -1,8 +1,8 @@
 # K.E.V.I.N. — Sensor Integration Foundation
 
-Version 0.3.1 · HAN Embedded Systems Engineering · 9 November 2026
+Version 0.4.0 · HAN Embedded Systems Engineering · 9 November 2026
 
-**A working integration foundation for the infant training manikin.** Run it today with six simulated sensors. Tomorrow, replace the pressure simulation with the existing SAMD21 CSV stream, while keeping the same validation, state management, logs and dashboard.
+**A working integration foundation and interactive patient-scenario lab for the infant training manikin.** Run it today with six simulated sensors. Tomorrow, replace the pressure simulation with the existing SAMD21 CSV stream, while keeping the same validation, state management, logs and dashboard.
 
 This is educational equipment. Test signals, candidate pressure events and geometry are not clinically validated patient measurements. The system does not control a medical monitor or actuators.
 
@@ -49,7 +49,7 @@ Requires Python **3.10 or newer**. Simulation, replay, tests and the dashboard u
    ```
 
 4. Open **http://127.0.0.1:8765** on the same computer.
-5. **Interactive lab:** use each sensor checkbox to stop/restart its synthetic stream, then watch it become stale and disconnected. Move a manual-value slider to replace that sensor's automatically generated waveform (IMU sliders set a synthetic rotation about one axis), or use **Auto waveform** to return to automatic generation. The global controls can pause/resume *all* simulated streams, clear overrides, and switch between the normal and fault-demonstration timelines.
+5. **Interactive lab:** select a patient scenario (cardiac arrest — asystole/VF, respiratory arrest, pinched/blocked airway, bradycardia, hypoxia, normal or sensor-fault demo), adjust the **airway obstruction** slider and toggle **synthetic bag ventilation/chest compressions**. The patient panel shows an illustrative heartbeat trace, heart/respiratory rate, scenario oxygen target and a fictional airflow proxy. See [scenario documentation](docs/PATIENT_SCENARIOS.md) for how to interpret these demo-only displays. Separately, use each sensor checkbox to stop/restart its synthetic stream, then watch it become stale and disconnected. Move a manual-value slider to replace that sensor's automatically generated waveform (IMU sliders set a synthetic rotation about one axis), or use **Auto waveform** to return to automatic generation. The global controls can pause/resume *all* simulated streams, clear overrides, and switch between the normal and fault-demonstration timelines.
 6. Press **Ctrl+C** in the terminal to stop. Logs are in `logs/session.jsonl`.
 
 For subsequent examples, `python` means the environment's interpreter. You can activate it, or substitute the explicit Windows/Linux executable above. On minimal Pi OS, install Python and `python3-venv` through the OS package manager if they are missing.
@@ -62,7 +62,7 @@ python -m kevin --no-web --duration 10 --log logs/smoke.jsonl
 
 Manual controls only change simulated inputs. They cannot control physical sensors, perform actual sensor calibration, or validate physiological thresholds. The dashboard is intentionally bound to localhost. It uses a per-process control token and should not be exposed through a public reverse proxy or network port. No source-data transformation on the dashboard can turn ADC counts into a measured volume or a calculated anatomical neck angle.
 
-The repeating signal generators are software fixtures. The `demo` fault schedule runs once: delayed head messages at 3–4 s, SpO₂ silence at 4–11 s, and invalid pressure at 6–8 s, followed by recovery. Small seeded pressure noise is always present. Rejected delayed packets appear in diagnostics. No automatic physiological interpretation is performed.
+The patient-scenario presets and responses are non-clinical software fixtures, and the virtual ECG is decorative. Neither these values nor the pressure excursion from a pinched airway proves actual air delivery or CPR success. The repeating signal generators are software fixtures. The `demo` fault schedule runs once: delayed head messages at 3–4 s, SpO₂ silence at 4–11 s, and invalid pressure at 6–8 s, followed by recovery. Small seeded pressure noise is always present. Rejected delayed packets appear in diagnostics. No automatic physiological interpretation is performed.
 
 ## 2. Connect the existing pressure module tomorrow
 
