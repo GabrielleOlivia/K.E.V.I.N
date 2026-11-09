@@ -1,0 +1,8 @@
+[
+  {"sensor_id":"pressure","node_id":"pressure_node","measurement":"pressure_delta","unit":"adc_count","stale_s":1.0,"disconnect_s":5.0,"minimum":-65535,"maximum":65535,"baseline_allowed":true},
+  {"sensor_id":"head_imu","node_id":"head_node","measurement":"orientation","unit":"quaternion_wxyz","shape":"quaternion","stale_s":0.5,"disconnect_s":3.0},
+  {"sensor_id":"chest_imu","node_id":"chest_node","measurement":"orientation","unit":"quaternion_wxyz","shape":"quaternion","stale_s":0.5,"disconnect_s":3.0},
+  {"sensor_id":"cpr","node_id":"cpr_node","measurement":"compression_force","unit":"N","stale_s":0.5,"disconnect_s":3.0},
+  {"sensor_id":"temperature","node_id":"temperature_node","measurement":"skin_temperature","unit":"degC","stale_s":3.0,"disconnect_s":10.0},
+  {"sensor_id":"spo2","node_id":"spo2_node","measurement":"spo2","unit":"percent","stale_s":2.0,"disconnect_s":6.0,"minimum":0,"maximum":100}
+]

@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kevin-sensor-integration"
+version = "0.3.1"
+description = "Modular infant training simulator sensor integration foundation"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+serial = ["pyserial==3.5"]
+
+[project.scripts]
+kevin = "kevin.app:main"
+
+[tool.setuptools.packages.find]
+include = ["kevin*"]
+
+[tool.setuptools.package-data]
+kevin = ["web/*.html", "web/*.js", "web/*.css", "default_sensors.json"]

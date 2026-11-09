@@ -1,0 +1,2 @@
+# Only required for a physical USB/UART connection.
+pyserial==3.5

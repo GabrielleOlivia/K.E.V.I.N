@@ -1,0 +1,55 @@
+{
+  "repository": "https://github.com/GabrielleOlivia/K.E.V.I.N",
+  "branch": "feature/pressure-logging",
+  "commit": "80d4b6915a86d1c64f27daf8a2a1b0bb9d1dfbf2",
+  "files": [
+    {
+      "path": ".gitignore",
+      "sha": "6e69e42d4cd7ccef37e4a7e4bae4d9ea4233aeb0"
+    },
+    {
+      "path": "README.md",
+      "sha": "b4881d624c9e0a58bb49727f0d7019fa4fdc26f1"
+    },
+    {
+      "path": "data/pressure_20260922_145124.txt",
+      "sha": "976982ae281a8122b23b2494e097aa315470eac2"
+    },
+    {
+      "path": "notes/known_good_usb_serial_test.cpp",
+      "sha": "a37783e44f1d629d50e347c185ae537b5f0e4783"
+    },
+    {
+      "path": "notes/pressure_logging_bench_test.md",
+      "sha": "330acca52e42211a0165f6df352ef882ccfcc795"
+    },
+    {
+      "path": "platformio.ini",
+      "sha": "bafbc7facbe1f3d250f1c05a082e103935e084f2"
+    },
+    {
+      "path": "src/main.cpp",
+      "sha": "6959b4776893da5afcad761cfabb2c039faff556"
+    },
+    {
+      "path": "tests/pressure_logger_host_test.cpp",
+      "sha": "9121139a2734cabdb9a9bb125a401662637a07f8"
+    },
+    {
+      "path": "tests/stubs/Arduino.h",
+      "sha": "4ce74c250e383358801b66c91bb4911338b2e658"
+    },
+    {
+      "path": "tests/stubs/Wire.h",
+      "sha": "ef7bd23b28516eca6b06a772ca5fcf534e3071b4"
+    },
+    {
+      "path": "tests/stubs/wiring_private.h",
+      "sha": "9d834ed858a32031fa5a8025f79c4df5db236122"
+    },
+    {
+      "path": "tools/plot_pressure_log.py",
+      "sha": "1412c8c756b21a9cb4a0b55c677fa31f6228ea25"
+    }
+  ]
+}

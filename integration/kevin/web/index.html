@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>K.E.V.I.N. | Integration Lab</title>
+<link rel="stylesheet" href="/style.css">
+<script defer src="/app.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><div class="brand-mark">K</div><div><p class="eyebrow">HAN · EMBEDDED SYSTEMS ENGINEERING</p><h1>K.E.V.I.N. <span class="muted">/ Integration Lab</span></h1><p class="subtitle">Six channels · one integration system · synthetic bench testing</p></div></div>
+  <div class="status-wrap"><span class="status-dot" aria-hidden="true"></span><span id="connection" role="status" aria-live="polite">Connecting…</span></div>
+</header>
+<main>
+  <aside class="notice"><strong>Training simulator — no clinical use.</strong> All virtual signals are synthetic test fixtures, not patient measurements. Pressure ADC counts do not establish delivered air volume. Relative IMU rotation does not establish anatomical neck angle.</aside>
+  <section class="lab-toolbar panel" aria-label="Simulation controls">
+    <div class="tool-head"><div><p class="eyebrow">VIRTUAL SENSOR LAB</p><h2>Experiment controls</h2><p>Test integration behavior before connecting hardware. Controls cannot change physical sensors.</p></div><span id="mode" class="mode">Loading…</span></div>
+    <div class="toolbar-grid">
+      <div class="control"><label for="scenario">Test scenario</label><select id="scenario"><option value="normal">Normal — no scheduled faults</option><option value="demo">Fault demonstration — delays, dropouts, ADC faults</option></select><small>Changing scenario restarts its fault timeline, not the sensor nodes.</small></div>
+      <div class="control"><label>Virtual streams</label><div class="actions"><button id="pause" type="button" class="primary">Pause all simulated streams</button><button id="reset-overrides" type="button">Reset manual values</button></div><small>Paused streams become stale and eventually disconnected.</small></div>
+    </div>
+    <p id="control-status" class="control-status" role="status" aria-live="polite">Loading available controls…</p>
+  </section>
+  <div class="section-title"><div><p class="eyebrow">LIVE CHANNELS</p><h2>Sensor readings</h2></div><span class="hint">Plots use the latest 120 received views. Missing samples break the line.</span></div>
+  <section id="cards" aria-label="Sensor channels"></section>
+  <section class="below">
+    <article class="panel"><p class="eyebrow">DERIVED GEOMETRY</p><h2>Head-to-chest relative rotation</h2><p id="derived" class="derived">Waiting for data</p><small>Rotation magnitude of synthetic, time-aligned quaternions. <strong>Not</strong> anatomical neck flexion.</small></article>
+    <article class="panel"><p class="eyebrow">SENSOR HEALTH</p><h2>Integration diagnostics</h2><p id="counters" class="diagnostics">Waiting for messages</p><div class="events"><h3>Recent events</h3><pre id="events"></pre></div></article>
+  </section>
+</main>
+<footer><span>Host reception controls connection health · measurement age controls freshness</span><span>Local access only · <strong>Simulation ≠ validation</strong></span></footer>
+</body>
+</html>

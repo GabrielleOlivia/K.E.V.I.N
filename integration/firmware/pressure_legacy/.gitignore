@@ -1,0 +1,104 @@
+# ==========================================
+# PlatformIO
+# ==========================================
+.pio/
+.pioenvs/
+.piolibdeps/
+
+# ==========================================
+# C / C++ build files
+# ==========================================
+*.d
+*.slo
+*.lo
+*.o
+*.obj
+*.gch
+*.pch
+*.ilk
+*.pdb
+*.elf
+*.bin
+*.hex
+*.map
+*.so
+*.so.*
+*.dylib
+*.dll
+*.lai
+*.la
+*.a
+*.lib
+*.exe
+*.out
+*.app
+*.dwo
+
+build/
+Build/
+build-*/
+out/
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+install_manifest.txt
+compile_commands.json
+
+# vcpkg
+vcpkg_installed/
+
+# ==========================================
+# VS Code
+# ==========================================
+.vscode/
+
+# ==========================================
+# Python / Raspberry Pi
+# ==========================================
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+
+# ==========================================
+# Secrets / credentials
+# ==========================================
+.env
+.env.*
+*.key
+*.pem
+credentials.*
+secrets.*
+wpa_supplicant.conf
+wifi_config.*
+network_credentials.*
+
+# ==========================================
+# Logs / generated data
+# ==========================================
+*.log
+logs/
+data/raw/
+captures/
+
+# Test/cache output
+Testing/
+.cache/
+
+# ==========================================
+# Temporary / OS files
+# ==========================================
+*.tmp
+*.temp
+*.bak
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -1,0 +1,23 @@
+Processing samd21_mock_node (platform: atmelsam@8.3.0; board: adafruit_feather_m0_express; framework: arduino)
+--------------------------------------------------------------------------------
+Verbose mode can be enabled via `-v, --verbose` option
+CONFIGURATION: https://docs.platformio.org/page/boards/atmelsam/adafruit_feather_m0_express.html
+PLATFORM: Atmel SAM (8.3.0) > Adafruit Feather M0 Express
+HARDWARE: SAMD21G18A 48MHz, 32KB RAM, 256KB Flash
+DEBUG: Current (atmel-ice) External (atmel-ice, blackmagic, jlink)
+PACKAGES: 
+ - framework-arduino-samd-adafruit @ 1.10716.0 (1.7.16) 
+ - framework-cmsis @ 2.50400.181126 (5.4.0) 
+ - framework-cmsis-atmel @ 1.2.2 
+ - toolchain-gccarmnoneeabi @ 1.90301.200702 (9.3.1)
+LDF: Library Dependency Finder -> https://bit.ly/configure-pio-ldf
+LDF Modes: Finder ~ chain, Compatibility ~ soft
+Found 11 compatible libraries
+Scanning dependencies...
+No dependencies
+Building in release mode
+Checking size .pio/build/samd21_mock_node/firmware.elf
+Advanced Memory Usage is available via "PlatformIO Home > Project Inspect"
+RAM:   [=         ]  13.1% (used 4288 bytes from 32768 bytes)
+Flash: [==        ]  16.3% (used 42840 bytes from 262144 bytes)
+========================= [SUCCESS] Took 1.33 seconds =========================

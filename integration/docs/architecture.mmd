@@ -1,0 +1,11 @@
+flowchart TD
+  A[Physical sensor drivers] --> B[USB or UART transport]
+  C[Six simulated sensors] --> D[Message decoder and validation]
+  B --> E[Pressure CSV or JSONL adapter]
+  E --> D
+  D --> F[Sensor manager and node clocks]
+  G[Sensor registry] --> F
+  F --> H[Unified state and derived geometry]
+  D --> I[Audit log]
+  H --> I
+  H --> J[Local dashboard and host API]
