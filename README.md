@@ -1,3 +1,9 @@
+> **New: K.E.V.I.N. Interactive Sensor Integration Lab (v0.3.1)**  
+> The complete host integration software, synthetic sensors, interactive dashboard, tests and setup instructions are in **[integration/](integration/README.md)**. The original pressure-sensor firmware below is preserved.  
+> Run locally: `cd integration` then `python -m kevin --mode simulate`. Browser: `http://127.0.0.1:8765`.  
+
+---
+
 # Pressure Sensor Test for the ModularSim SensorHub
 
 Phase 1 respiratory pressure-sensing proof of concept for the Advanced Life Support Monitor Simulator infant-manikin project.
