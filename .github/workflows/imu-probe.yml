@@ -1,0 +1,22 @@
+name: BHI360 IMU probe build and tests
+on:
+  push:
+    paths:
+      - "hardware/imu/diagnostics/**"
+      - ".github/workflows/imu-probe.yml"
+  pull_request:
+    paths:
+      - "hardware/imu/diagnostics/**"
+      - ".github/workflows/imu-probe.yml"
+jobs:
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --upgrade platformio
+      - run: python -m unittest discover -s tests -v
+        working-directory: hardware/imu/diagnostics
+      - run: pio run -d hardware/imu/diagnostics
