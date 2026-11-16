@@ -192,6 +192,48 @@ void probeBothImus()
     lastImuProbeMs = millis();
 }
 
+// Optional read-only bench validation before ANY future firmware upload.
+// Never send sensor reset/firmware commands here. A dedicated 10-second test
+// is appropriate only while pressure sampling is disabled/absent.
+void testImuLinkStability()
+{
+    if (pressurePresentAtBoot)
+    {
+        Serial.println("# IMU_STABILITY_SKIPPED: pressure ADC active; avoid blocking samples");
+        return;
+    }
+    constexpr uint16_t rounds = 200;
+    uint16_t chestPass = 0, headPass = 0;
+    uint16_t chestFirstFail = 0, headFirstFail = 0;
+    Serial.println("# IMU_STABILITY_BEGIN rounds=200 interval_ms=50 (read-only IDs)");
+    for (uint16_t n = 1; n <= rounds; ++n)
+    {
+        uint8_t fuser = 0, chip = 0;
+        const bool aOk = readImuRegister(WireSensorA, BHI360_FUSER2_ID_REG, fuser) &&
+                         fuser == EXPECTED_FUSER2_ID &&
+                         readImuRegister(WireSensorA, BHI360_CHIP_ID_REG, chip) &&
+                         chip == EXPECTED_CHIP_ID;
+        if (aOk) ++chestPass;
+        else if (!chestFirstFail) chestFirstFail = n;
+        fuser = chip = 0;
+        const bool bOk = readImuRegister(WireSensorB, BHI360_FUSER2_ID_REG, fuser) &&
+                         fuser == EXPECTED_FUSER2_ID &&
+                         readImuRegister(WireSensorB, BHI360_CHIP_ID_REG, chip) &&
+                         chip == EXPECTED_CHIP_ID;
+        if (bOk) ++headPass;
+        else if (!headFirstFail) headFirstFail = n;
+        delay(50);
+    }
+    Serial.print("# IMU_STABILITY CHEST pass="); Serial.print(chestPass);
+    Serial.print(" fail="); Serial.print(rounds - chestPass);
+    Serial.print(" first_fail_round="); Serial.println(chestFirstFail);
+    Serial.print("# IMU_STABILITY HEAD pass="); Serial.print(headPass);
+    Serial.print(" fail="); Serial.print(rounds - headPass);
+    Serial.print(" first_fail_round="); Serial.println(headFirstFail);
+    Serial.println("# IMU_STABILITY_END");
+    probeBothImus();
+}
+
 // Provisional raw-count thresholds for this bench setup, not clinical limits.
 const int EVENT_THRESHOLD = 200;
 const int RETURN_THRESHOLD = 80;
@@ -526,7 +568,7 @@ void setup()
     {
     }
 
-    Serial.println("# KEVIN PRESSURE + DUAL IMU v0.3 OPTIONAL-PRESSURE (no BHI firmware writes)");
+    Serial.println("# KEVIN PRESSURE + DUAL IMU v0.4 LINK-STABILITY (no BHI firmware writes)");
     Serial.println("# Pressure sensor: MCP3426 @0x68, A2; CHEST @0x29, A1; HEAD @0x29, B1");
     Serial.println("# Candidate pressure events only, not infant ventilation or calibrated pressure");
     Serial.println("t_ms,raw,baseline,delta,state,candidate_count,sample_ok,baseline_ok");
@@ -557,7 +599,7 @@ void setup()
     Serial.println(pressurePresentAtBoot ? "ADC_DETECTED (calibration still required)" :
                     "ADC_NOT_DETECTED (IMU_ONLY; pressure samples suppressed)");
     probeBothImus();
-    Serial.println("# Commands: s=I2C ACK check; p=read-only IMU probe; z=pressure calibration; h=help");
+    Serial.println("# Commands: s=I2C ACK check; p=read-only IMU probe; t=200x read-only link test; z=pressure calibration; h=help");
 
     // Manual-only calibration: stay in CAL_REQUIRED until the dashboard/user
     // explicitly sends 'z'. A valid baseline then remains fixed until another
@@ -571,19 +613,22 @@ void loop()
     bool recalibrate = false;
     bool forceProbe = false;
     bool forceBusCheck = false;
+    bool forceLinkTest = false;
     while (Serial.available())
     {
         const char command = static_cast<char>(Serial.read());
         if (command == 'z' || command == 'Z') recalibrate = true;
         if (command == 'p' || command == 'P') forceProbe = true;
         if (command == 's' || command == 'S') forceBusCheck = true;
+        if (command == 't' || command == 'T') forceLinkTest = true;
         if (command == 'h' || command == 'H')
         {
-            Serial.println("# s=I2C ACK check; p=read-only IMU probe; z=pressure calibration; h=help");
+            Serial.println("# s=I2C ACK check; p=read-only IMU probe; t=read-only IMU link test; z=pressure calibration; h=help");
             Serial.println("# IMU orientation NOT available. 'identified=1' does not mean motion works.");
         }
     }
     if (forceBusCheck) checkBusAddresses();
+    if (forceLinkTest) testImuLinkStability();
     if (forceProbe ||
         static_cast<uint32_t>(millis() - lastImuProbeMs) >= IMU_PROBE_INTERVAL_MS)
     {
