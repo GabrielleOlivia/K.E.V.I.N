@@ -1,6 +1,6 @@
 # K.E.V.I.N. — Pressure + two BHI360 IMUs on one SAMD21
 
-**Status (2026-11-16):** Initial combined firmware v0.1 compiled and was uploaded, but hardware serial logs showed pressure sampling failed (`sample_ok=0`) and CHEST identification failed (`identified=0`), while HEAD identification on Bus B succeeded. Pressure calibration failed. Both failing devices share Bus A (SERCOM1). **v0.2 adds diagnostic information and has not yet been built or hardware-tested.** Not yet a functioning pressure+orientation system. For infant-manikin training research only.
+**Status (2026-11-16):** v0.2 ran on the SAMD21: both BHI360 IMUs were repeatedly identified (`identified=1`), but pressure ADC writes returned I²C address NACK (`wire_status=2`). User confirmed **no pressure sensor was connected** and that individual female-to-female jumper wires on the IMUs sometimes disconnect. Hence the ADC failure is expected, and previous Bus A failure is not evidence of a faulty sensor or controller. **v0.3 now treats the pressure module as optional at boot; it is committed but not yet built or tested on hardware.** IMU orientation remains unavailable because the BHI360 firmware-boot problem is separate. Infant-manikin research only; not clinical use.
 
 This is a **separate PlatformIO project** at `hardware/sensorhub/pressure-imu`. It does not overwrite the pressure test code or the experimental BHI360 firmware-boot code.
 
@@ -35,9 +35,9 @@ Connect only the existing verified keyed cables, with all power **off**. The cur
 
 The earlier crash report from `hardware/imu/dual-motion/diagnostics/2026-11-16-chest-crash-v0.8.md` shows firmware startup problems. The integrated program deliberately does not repeat those operations.
 
-## Initial combined-hardware test: Bus A failure
+## First combined test and updated interpretation
 
-User serial output, 2026-11-16: pressure ADC returned no valid samples and baseline calibration failed; CHEST BHI360 could not be identified; HEAD BHI360 on separate Bus B identified successfully. **Bus A is a leading suspect, but the source of failure is not proven.**
+User serial output, 2026-11-16: pressure ADC returned no valid samples and baseline calibration failed; CHEST BHI360 could not be identified; HEAD BHI360 on separate Bus B identified successfully. **Later information resolves most of this:** no pressure sensor was physically connected, explaining address NACK at `0x68`; CHEST and HEAD both became consistently identifiable in the next log. The shared bus is not proven faulty.
 
 v0.2 adds a safe **`s`** serial command to test only the three known I2C addresses (no BHI360 firmware upload):
 
@@ -51,7 +51,30 @@ v0.2 adds a safe **`s`** serial command to test only the three known I2C address
 
 These rows illustrate **success**, not observed results. Actual status `0` means ACK; `2` usually means I2C address NACK; `3` data NACK; `4` other Wire error. v0.2 also emits `# ADC_DIAG reason=... wire_status=... rx_count=... returned_config=...` to distinguish I2C configuration NACK, short read, ADC conversion not ready, or unexpected ADC config. Repeated ADC fault messages are rate-limited.
 
-**Next test:** `git pull --ff-only` from current integrated project directory, PlatformIO Build, then Upload only if Build succeeds. Open serial monitor, type `s` and copy the three BUS_CHECK results plus ADC_DIAG. **Do not calibrate with `z` while pressure samples fail.** If Bus A is still missing both devices, power off every supply first; inspect verified connectors/power and the specific board's A bus. If electrically safe and approved by the physical board documentation, test pressure alone on A2 with chest disconnected (power OFF before any connection change), then chest alone. Check power and SDA/SCL pull-ups; do not hot-plug, change supplies, or add arbitrary pull-ups.
+**Next test (updated):** `git pull --ff-only`, PlatformIO Build, then Upload only if Build succeeds. Open Serial Monitor and confirm `PRESSURE_MODE ADC_NOT_DETECTED`, both IMU status lines and the slower `PRESSURE_ABSENT` CSV rows. No pressure calibration is possible until the module is connected at power-up. If Bus A IMU identification is intermittent, investigate the jumper-wire connections (power OFF first). If Bus A is still missing both devices, power off every supply first; inspect verified connectors/power and the specific board's A bus. If electrically safe and approved by the physical board documentation, test pressure alone on A2 with chest disconnected (power OFF before any connection change), then chest alone. Check power and SDA/SCL pull-ups; do not hot-plug, change supplies, or add arbitrary pull-ups.
+
+## Optional pressure module (v0.3)
+
+Because the pressure module is **not currently connected**, v0.3 tests its I2C address `0x68` only at startup, then enters `IMU_ONLY` if absent. It does **not** repeatedly write nonexistent ADC configuration registers or flood the terminal with ADC faults. The IMU status probes on A1 and B1 continue.
+
+Expected when no MCP3426 is attached (illustrative, not hardware-verified):
+
+```text
+# BUS_CHECK bus=A device=PRESSURE_ADC address=0x68 wire_status=2 ack=0
+# BUS_CHECK bus=A device=CHEST_IMU address=0x29 wire_status=0 ack=1
+# BUS_CHECK bus=B device=HEAD_IMU address=0x29 wire_status=0 ack=1
+# PRESSURE_MODE ADC_NOT_DETECTED (IMU_ONLY; pressure samples suppressed)
+# IMU,CHEST,identified=1,revision=0x2,boot=0x18,error=0x0,motion=NOT_INITIALIZED
+# IMU,HEAD,identified=1,revision=0x2,boot=0x18,error=0x0,motion=NOT_INITIALIZED
+1000,,,,PRESSURE_ABSENT,0,0,0
+# JOIN,1000,,,PRESSURE_ABSENT,0,0,0,1,1,
+```
+
+The empty pressure and neck-angle fields are deliberate: **no fabricated measurements**. Manual `z` reports a calibration skip when the pressure ADC was not detected at boot. To attach a pressure module later, power **everything off**, connect the verified pressure module and restart the SensorHub. Its presence is latched at boot; the `s` command may display live ACK changes but does not enable hot-plugging.
+
+Individual female-to-female jumper wires on the IMUs are reported as physically sensitive and can come loose. Replace or secure the wiring with an electrically compatible **keyed/locking harness or correctly crimped multi-pin connectors** after checking the actual SensorHub and IMU board pinouts and supply voltage. Disconnect power before doing so. If an IMU disappears intermittently, treat its status as unavailable; `identified=1` only confirms register communication at the instant of the probe.
+
+The existing pressure ADC read/zero/calibration and candidate-event logic is kept for when the module becomes available. **Actual pressure data and head/neck angles are not yet available in this combined configuration.**
 
 ## Output protocol
 
