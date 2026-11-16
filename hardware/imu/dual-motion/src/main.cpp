@@ -27,6 +27,9 @@ constexpr uint8_t FUSER2_ID_EXPECTED = 0x89; // verified with existing probe
 constexpr uint32_t SAMPLE_INTERVAL_MS = 25; // poll each at ~40Hz, configured 25Hz
 constexpr uint32_t PRINT_INTERVAL_MS = 100; // print latest snapshots at up to 10Hz
 constexpr size_t FIFO_BUFFER_SIZE = 512;
+// Diagnostic experiment: allow the BHI360 command-channel consumer to
+// catch up between consecutive 28-byte chunks. 28 is word-aligned (4 bytes).
+constexpr uint32_t FW_UPLOAD_PACING_US = 1000;
 
 TwoWire busA(&sercom1, SDA_A, SCL_A);
 TwoWire busB(&sercom2, SDA_B, SCL_B);
@@ -47,6 +50,11 @@ struct Imu {
   uint8_t lastWireStage; // 1=write address/register, 2=short read, 3=TX overflow, 4=TX NACK
   uint8_t lastWireRegister;
   uint32_t lastWireLength;
+  bool trackingUpload;
+  uint32_t successfulUploadWrites;
+  uint32_t successfulUploadBytes;
+  uint32_t failedAtWrite;
+  uint32_t failedAtByte;
 };
 Imu chest = {"CHEST", &busA, {}, false, false, 0, 0, 0, 1, 0, 0, 0};
 Imu head  = {"HEAD",  &busB, {}, false, false, 0, 0, 0, 1, 0, 0, 0};
@@ -118,8 +126,18 @@ int8_t boschWrite(uint8_t reg, const uint8_t *data, uint32_t len, void *context)
   }
   const uint8_t status = wire.endTransmission(true);
   if (status != 0) {
+    if (imu->trackingUpload && reg == BHI360_REG_CHAN_CMD) {
+      imu->failedAtWrite = imu->successfulUploadWrites + 1;
+      imu->failedAtByte = imu->successfulUploadBytes;
+    }
     markI2cFailure(*imu, 4, status, reg, len);
     return -1;
+  }
+  if (imu->trackingUpload && reg == BHI360_REG_CHAN_CMD) {
+    ++imu->successfulUploadWrites;
+    imu->successfulUploadBytes += len;
+    // Intentional pacing, ONLY during the manually requested firmware upload.
+    delayMicroseconds(FW_UPLOAD_PACING_US);
   }
   return 0;
 }
@@ -181,6 +199,24 @@ void printDiagnostics(Imu& imu, const char* phase) {
   Serial.print(" sensor_error_read_result="); Serial.print(static_cast<int>(result));
   if (result == BHI360_OK) {
     Serial.print(" sensor_error=0x"); Serial.print(sensorError, HEX);
+  }
+  Serial.println();
+
+  uint8_t debugState = 0;
+  result = bhi360_get_regs(BHI360_REG_DEBUG_STATE, &debugState, 1, &imu.dev);
+  Serial.print("# "); Serial.print(imu.label);
+  Serial.print(" debug_state_read_result="); Serial.print(static_cast<int>(result));
+  if (result == BHI360_OK) {
+    Serial.print(" debug_state=0x"); Serial.print(debugState, HEX);
+  }
+  Serial.println();
+
+  uint8_t debugValue = 0;
+  result = bhi360_get_regs(BHI360_REG_DEBUG_VALUE, &debugValue, 1, &imu.dev);
+  Serial.print("# "); Serial.print(imu.label);
+  Serial.print(" debug_value_read_result="); Serial.print(static_cast<int>(result));
+  if (result == BHI360_OK) {
+    Serial.print(" debug_value=0x"); Serial.print(debugValue, HEX);
   }
   Serial.println();
 }
@@ -299,8 +335,23 @@ bool initImu(Imu& imu) {
   Serial.print("# "); Serial.print(imu.label);
   Serial.print(" loading "); Serial.print(sizeof(bhi360_firmware_image));
   Serial.println(" firmware bytes to BHI360 RAM; do not disconnect USB");
+  // Deliberately scope pacing and byte counting to the firmware upload.
+  imu.successfulUploadWrites = 0;
+  imu.successfulUploadBytes = 0;
+  imu.failedAtWrite = 0;
+  imu.failedAtByte = 0;
+  imu.trackingUpload = true;
+  const uint32_t uploadStartMs = millis();
   const int8_t uploadResult = bhi360_upload_firmware_to_ram(
       bhi360_firmware_image, sizeof(bhi360_firmware_image), &imu.dev);
+  const uint32_t uploadElapsedMs = millis() - uploadStartMs;
+  imu.trackingUpload = false;
+  Serial.print("# "); Serial.print(imu.label);
+  Serial.print(" upload_progress accepted_writes="); Serial.print(imu.successfulUploadWrites);
+  Serial.print(" accepted_channel_bytes="); Serial.print(imu.successfulUploadBytes);
+  Serial.print(" failed_write="); Serial.print(imu.failedAtWrite);
+  Serial.print(" failed_after_bytes="); Serial.print(imu.failedAtByte);
+  Serial.print(" elapsed_ms="); Serial.println(uploadElapsedMs);
   if (!checked("firmware_upload", uploadResult, imu)) {
     printDiagnostics(imu, "firmware_upload_failed");
     return false;
@@ -363,7 +414,7 @@ void setup() {
   Serial.begin(115200);
   const uint32_t start = millis();
   while (!Serial && millis() - start < 3500) delay(10);
-  Serial.println("# KEVIN Dual BHI360 GameRV v0.4 SINGLE-IMU LITE TEST");
+  Serial.println("# KEVIN Dual BHI360 GameRV v0.5 PACED-TRANSFER DIAGNOSTIC");
   Serial.println("# Sensor A1=CHEST, Sensor B1=HEAD, both at I2C 0x29");
   if (!pinsMatch(SDA_A, PORTA, 16) || !pinsMatch(SCL_A, PORTA, 17) ||
       !pinsMatch(SDA_B, PORTA, 12) || !pinsMatch(SCL_B, PORTA, 13)) {
