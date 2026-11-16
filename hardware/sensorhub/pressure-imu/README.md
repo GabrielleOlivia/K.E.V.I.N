@@ -1,6 +1,6 @@
 # K.E.V.I.N. — Pressure + two BHI360 IMUs on one SAMD21
 
-**Status (2026-11-16):** v0.2 ran on the SAMD21: both BHI360 IMUs were repeatedly identified (`identified=1`), but pressure ADC writes returned I²C address NACK (`wire_status=2`). User confirmed **no pressure sensor was connected** and that individual female-to-female jumper wires on the IMUs sometimes disconnect. Hence the ADC failure is expected, and previous Bus A failure is not evidence of a faulty sensor or controller. **v0.3 now treats the pressure module as optional at boot; it is committed but not yet built or tested on hardware.** IMU orientation remains unavailable because the BHI360 firmware-boot problem is separate. Infant-manikin research only; not clinical use.
+**Status (2026-11-16):** v0.2 ran on the SAMD21: both BHI360 IMUs were repeatedly identified (`identified=1`), but pressure ADC writes returned I²C address NACK (`wire_status=2`). User confirmed **no pressure sensor was connected** and that individual female-to-female jumper wires on the IMUs sometimes disconnect. Hence the ADC failure is expected, and previous Bus A failure is not evidence of a faulty sensor or controller. v0.3 was built/uploaded and tested: both IMUs ACKed and reported correct IDs repeatedly, with pressure correctly absent. **v0.4 adds a read-only stability test and has not yet been compiled or hardware-tested.** IMU orientation remains unavailable because the BHI360 firmware-boot problem is separate. Infant-manikin research only; not clinical use.
 
 This is a **separate PlatformIO project** at `hardware/sensorhub/pressure-imu`. It does not overwrite the pressure test code or the experimental BHI360 firmware-boot code.
 
@@ -53,9 +53,26 @@ These rows illustrate **success**, not observed results. Actual status `0` means
 
 **Next test (updated):** `git pull --ff-only`, PlatformIO Build, then Upload only if Build succeeds. Open Serial Monitor and confirm `PRESSURE_MODE ADC_NOT_DETECTED`, both IMU status lines and the slower `PRESSURE_ABSENT` CSV rows. No pressure calibration is possible until the module is connected at power-up. If Bus A IMU identification is intermittent, investigate the jumper-wire connections (power OFF first). If Bus A is still missing both devices, power off every supply first; inspect verified connectors/power and the specific board's A bus. If electrically safe and approved by the physical board documentation, test pressure alone on A2 with chest disconnected (power OFF before any connection change), then chest alone. Check power and SDA/SCL pull-ups; do not hot-plug, change supplies, or add arbitrary pull-ups.
 
+## Next step: check link stability before firmware work (v0.4)
+
+**Keep the existing working wiring unchanged until power is OFF.** Once individual female-to-female IMU jumpers are strain-relieved or replaced with correctly wired/verified connectors, build/upload v0.4 of **this** pressure-IMU PlatformIO project. With no pressure module attached, send serial **`t`** to perform 200 read-only FUSER2/chip-ID checks on CHEST and HEAD over about 10 seconds.
+
+Expected output format (illustrative only):
+
+```text
+# IMU_STABILITY_BEGIN rounds=200 interval_ms=50 (read-only IDs)
+# IMU_STABILITY CHEST pass=200 fail=0 first_fail_round=0
+# IMU_STABILITY HEAD pass=200 fail=0 first_fail_round=0
+# IMU_STABILITY_END
+```
+
+Any failure indicates an unreliable read, not proof of the exact electrical cause. Even 200/200 readings is only a necessary screen; it cannot prove that an 82 KB firmware upload will succeed. The command is deliberately disabled if the pressure ADC was present at boot, because the diagnostic blocks normal sampling.
+
+The separate dual-motion project now includes `scripts/audit-firmware.py` (host-only). From `hardware/imu/dual-motion`, run `powershell -ExecutionPolicy Bypass -File .\scripts\setup-bosch.ps1` to install both the official `.fw` and `.fw.h` from Bosch v2.3.1, then `py -3 .\scripts\audit-firmware.py` to verify exact binary/header byte equality, pinned Git blob SHA and reconstruct the four initial command-channel packets. **The audit never accesses the IMUs and does not flash the SAMD21.** This is the next work item for diagnosing the historical Bosch `0x44` crash.
+
 ## Optional pressure module (v0.3)
 
-Because the pressure module is **not currently connected**, v0.3 tests its I2C address `0x68` only at startup, then enters `IMU_ONLY` if absent. It does **not** repeatedly write nonexistent ADC configuration registers or flood the terminal with ADC faults. The IMU status probes on A1 and B1 continue.
+Because the pressure module is **not currently connected**, v0.3 and v0.4 test its I2C address `0x68` only at startup, then enters `IMU_ONLY` if absent. It does **not** repeatedly write nonexistent ADC configuration registers or flood the terminal with ADC faults. The IMU status probes on A1 and B1 continue.
 
 Expected when no MCP3426 is attached (illustrative, not hardware-verified):
 
@@ -107,6 +124,7 @@ Pressure rows may be sent during `CALIBRATING` and `CAL_REQUIRED` states; don't 
 - `z` — recalibrate pressure at rest; counting remains inactive until an accepted baseline is available
 - `p` — re-read both BHI360 device IDs and status registers now (read-only)
 - `s` — read-only I2C ACK test for known addresses (A 0x68, A 0x29, B 0x29)
+- `t` — 200-round read-only CHEST+HEAD I²C stability test (only when pressure ADC absent at boot)
 - `h` — show help
 
 The firmware also probes IMUs automatically approximately every 2 seconds between pressure conversions. **There are no `c`, `b`, or `u` BHI360 upload commands in this new program.**
