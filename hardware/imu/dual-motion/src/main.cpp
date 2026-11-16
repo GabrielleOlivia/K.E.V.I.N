@@ -63,6 +63,9 @@ struct Imu {
 Imu chest = {"CHEST", &busA, {}, false, false, 0, 0, 0, 1, 0, 0, 0};
 Imu head  = {"HEAD",  &busB, {}, false, false, 0, 0, 0, 1, 0, 0, 0};
 
+// Defined below; called after a single explicitly requested upload fails.
+void requestPostmortem(Imu& imu, bool forceEvenIfErrorCleared);
+
 bool pinsMatch(uint8_t idx, uint32_t port, uint32_t pin) {
   return g_APinDescription[idx].ulPort == port && g_APinDescription[idx].ulPin == pin;
 }
@@ -236,8 +239,11 @@ void printDiagnostics(Imu& imu, const char* phase) {
 // Query the official Bosch postmortem command (0x0001).
 // This is NOT a firmware upload or a reboot. It may still fail if the ROM
 // does not accept commands after a fatal error.
-void requestPostmortem(Imu& imu) {
+void requestPostmortem(Imu& imu, bool forceEvenIfErrorCleared) {
   Serial.print("# "); Serial.print(imu.label); Serial.println(" POSTMORTEM_BEGIN");
+  Serial.print("# "); Serial.print(imu.label);
+  Serial.print(" postmortem_mode=");
+  Serial.println(forceEvenIfErrorCleared ? "auto_immediately_after_upload_failure" : "manual");
   uint8_t chip = 0;
   if (!readChipId(*imu.wire, chip) || chip != FUSER2_ID_EXPECTED) {
     Serial.println("# POSTMORTEM_ABORT: device ID unavailable");
@@ -256,9 +262,14 @@ void requestPostmortem(Imu& imu) {
     Serial.print(" error=0x"); Serial.print(error, HEX);
   }
   Serial.println();
-  if (rc != BHI360_OK || error == 0) {
+  if (rc != BHI360_OK || (error == 0 && !forceEvenIfErrorCleared)) {
     Serial.println("# POSTMORTEM_SKIPPED: no recorded error (or error register inaccessible)");
     return;
+  }
+  // On some reset/error paths, the error register can already read zero.
+  // After a known upload/boot failure, ask the ROM for its crash dump anyway.
+  if (error == 0) {
+    Serial.println("# POSTMORTEM_FORCE_REQUEST: error register currently zero");
   }
   uint32_t actualLength = 0;
   const int8_t result = bhi360_get_post_mortem_data(postmortemBuffer,
@@ -434,6 +445,7 @@ bool initImu(Imu& imu) {
   Serial.print(" elapsed_ms="); Serial.println(uploadElapsedMs);
   if (!checked("firmware_upload", uploadResult, imu)) {
     printDiagnostics(imu, "firmware_upload_failed");
+    requestPostmortem(imu, true);
     return false;
   }
   // Always show verification status after transfer, before asking for boot.
@@ -441,6 +453,7 @@ bool initImu(Imu& imu) {
   const int8_t bootResult = bhi360_boot_from_ram(&imu.dev);
   if (!checked("boot_from_ram", bootResult, imu)) {
     printDiagnostics(imu, "boot_from_ram_failed");
+    requestPostmortem(imu, true);
     return false;
   }
   uint16_t kernel = 0;
@@ -494,7 +507,7 @@ void setup() {
   Serial.begin(115200);
   const uint32_t start = millis();
   while (!Serial && millis() - start < 3500) delay(10);
-  Serial.println("# KEVIN Dual BHI360 GameRV v0.6 POSTMORTEM DIAGNOSTIC");
+  Serial.println("# KEVIN Dual BHI360 GameRV v0.7 AUTO-CRASH-CAPTURE");
   Serial.println("# Sensor A1=CHEST, Sensor B1=HEAD, both at I2C 0x29");
   if (!pinsMatch(SDA_A, PORTA, 16) || !pinsMatch(SCL_A, PORTA, 17) ||
       !pinsMatch(SDA_B, PORTA, 12) || !pinsMatch(SCL_B, PORTA, 13)) {
@@ -512,8 +525,8 @@ void setup() {
   // Never issue firmware commands automatically when MCU is power-cycled or reset.
   preflight(chest);
   preflight(head);
-  Serial.println("# Commands: p=read-only preflight; d=CHEST crash dump; c=CHEST upload; b=HEAD upload; h=help");
-  Serial.println("# NEXT STEP: send d ONLY to request retained CHEST crash data; no new firmware upload.");
+  Serial.println("# Commands: p=preflight; d=manual CHEST dump; c=one CHEST upload; b=one HEAD upload; h=help");
+  Serial.println("# No automatic firmware upload. After manual c/b failure, crash capture runs before reset.");
 }
 
 void loop() {
@@ -527,13 +540,13 @@ void loop() {
       preflight(chest);
       preflight(head);
     } else if (c == 'h' || c == 'H') {
-      Serial.println("# p=preflight reads; d=CHEST postmortem; c=one CHEST upload; b=one HEAD upload");
+      Serial.println("# p=preflight reads; d=manual CHEST postmortem; c=one CHEST upload + auto crash capture; b=one HEAD upload + auto crash capture");
     } else if (c == 'd' || c == 'D') {
       if (requestedDumpChest) {
         Serial.println("# CHEST postmortem already requested in this MCU session");
       } else {
         requestedDumpChest = true;
-        requestPostmortem(chest);
+        requestPostmortem(chest, false);
       }
     } else if (c == 'c' || c == 'C') {
       if (attemptedChest) {
