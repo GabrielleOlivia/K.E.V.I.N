@@ -32,6 +32,26 @@ Serial commands:
 
 For each IMU, attempts are limited to once per SAMD21 session. **Avoid automatic repeats**; inspect all diagnostic output, then power-cycle before any later attempt. Motion measurement remains unverified.
 
+## Offline firmware-source audit (added on integration branch)
+
+On branch `feature/pressure-imu-integration`, `scripts/setup-bosch.ps1` now copies the *raw* `.fw` file as well as `.fw.h` from the pinned Bosch v2.3.1 release. `scripts/audit-firmware.py` verifies:
+
+- C-array bytes exactly equal the `.fw` binary.
+- The binary has Bosch's expected image length (82648), 4-byte alignment and image magic `0x662B`.
+- Its Git blob SHA-1 matches `9653806deb40032f606d78b72ed6b8d7849da816`, retrieved directly from Bosch v2.3.1.
+- It reconstructs first four 28-byte command-channel payloads per Bosch's framing. Three successful writes cover the 4-byte upload command and 80 firmware bytes, so the fourth failed write begins at firmware byte offset 80.
+
+Run from this directory (does not use serial or touch IMU hardware):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-bosch.ps1
+py -3 .\scripts\audit-firmware.py
+```
+
+**Important:** A byte-identical Bosch file and correctly constructed *expected* packets do not prove the SAMD21's actual I²C wire signals or guarantee BHI360 boot success. The physical wires are currently loose, and these must be secured and checked before any manual firmware upload. The integrated v0.4 firmware provides a separate 200-round read-only stability test (`t`) that does not reset/upload either IMU.
+
+**Firmware selection:** Bosch describes `bsxsam_lite` as accel+gyro only, while `bsxsam` supplies full BSX fusion. The current lite image is useful for isolating bootloader problems, but successful booting of that image must **not** be assumed to provide the `BHI360_SENSOR_ID_GAMERV` quaternion sensor. Once boot is reliable, verify actual virtual-sensor availability, then select a compatible full BSX image for a proper head-to-chest quaternion experiment.
+
 ## What the eventual motion prototype attempts
 
 1. Verify each BHI360 FUSER2 identifier before configuration writes.
