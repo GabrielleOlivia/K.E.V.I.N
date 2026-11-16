@@ -348,7 +348,7 @@ bool calibrateBaseline()
 
     Serial.print("# READY: baseline_raw=");
     Serial.print(baseline);
-    Serial.println("; baseline locked until you press Calibrate baseline again.");
+    Serial.println("; baseline locked until you send z to recalibrate.");
 
     return true;
 }
@@ -431,7 +431,7 @@ void setup()
     {
     }
 
-    Serial.println("# KEVIN PRESSURE + DUAL IMU v0.1 — ID ONLY; no fusion firmware writes");
+    Serial.println("# KEVIN PRESSURE + DUAL IMU v0.1 ID ONLY; no fusion firmware writes");
     Serial.println("# Pressure sensor: MCP3426 @0x68, A2; CHEST @0x29, A1; HEAD @0x29, B1");
     Serial.println("# Candidate pressure events only, not infant ventilation or calibrated pressure");
     Serial.println("t_ms,raw,baseline,delta,state,candidate_count,sample_ok,baseline_ok");
