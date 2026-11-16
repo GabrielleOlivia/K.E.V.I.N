@@ -1,6 +1,6 @@
 # K.E.V.I.N. — Pressure + two BHI360 IMUs on one SAMD21
 
-**Status (2026-11-16):** The source is committed on branch `feature/pressure-imu-integration`. **Not yet compiled or tested on the combined physical setup.** This is a safe integration baseline, *not* a functioning orientation/neck-angle measurement system. For infant-manikin training research only; not for clinical care.
+**Status (2026-11-16):** Initial combined firmware v0.1 compiled and was uploaded, but hardware serial logs showed pressure sampling failed (`sample_ok=0`) and CHEST identification failed (`identified=0`), while HEAD identification on Bus B succeeded. Pressure calibration failed. Both failing devices share Bus A (SERCOM1). **v0.2 adds diagnostic information and has not yet been built or hardware-tested.** Not yet a functioning pressure+orientation system. For infant-manikin training research only.
 
 This is a **separate PlatformIO project** at `hardware/sensorhub/pressure-imu`. It does not overwrite the pressure test code or the experimental BHI360 firmware-boot code.
 
@@ -35,6 +35,24 @@ Connect only the existing verified keyed cables, with all power **off**. The cur
 
 The earlier crash report from `hardware/imu/dual-motion/diagnostics/2026-11-16-chest-crash-v0.8.md` shows firmware startup problems. The integrated program deliberately does not repeat those operations.
 
+## Initial combined-hardware test: Bus A failure
+
+User serial output, 2026-11-16: pressure ADC returned no valid samples and baseline calibration failed; CHEST BHI360 could not be identified; HEAD BHI360 on separate Bus B identified successfully. **Bus A is a leading suspect, but the source of failure is not proven.**
+
+v0.2 adds a safe **`s`** serial command to test only the three known I2C addresses (no BHI360 firmware upload):
+
+```text
+# BUS_CHECK_BEGIN (address ACK only; no firmware writes)
+# BUS_CHECK bus=A device=PRESSURE_ADC address=0x68 wire_status=0 ack=1
+# BUS_CHECK bus=A device=CHEST_IMU address=0x29 wire_status=0 ack=1
+# BUS_CHECK bus=B device=HEAD_IMU address=0x29 wire_status=0 ack=1
+# BUS_CHECK_END
+```
+
+These rows illustrate **success**, not observed results. Actual status `0` means ACK; `2` usually means I2C address NACK; `3` data NACK; `4` other Wire error. v0.2 also emits `# ADC_DIAG reason=... wire_status=... rx_count=... returned_config=...` to distinguish I2C configuration NACK, short read, ADC conversion not ready, or unexpected ADC config. Repeated ADC fault messages are rate-limited.
+
+**Next test:** `git pull --ff-only` from current integrated project directory, PlatformIO Build, then Upload only if Build succeeds. Open serial monitor, type `s` and copy the three BUS_CHECK results plus ADC_DIAG. **Do not calibrate with `z` while pressure samples fail.** If Bus A is still missing both devices, power off every supply first; inspect verified connectors/power and the specific board's A bus. If electrically safe and approved by the physical board documentation, test pressure alone on A2 with chest disconnected (power OFF before any connection change), then chest alone. Check power and SDA/SCL pull-ups; do not hot-plug, change supplies, or add arbitrary pull-ups.
+
 ## Output protocol
 
 USB serial **115200 baud**. Ordinary CSV pressure rows remain unchanged:
@@ -65,6 +83,7 @@ Pressure rows may be sent during `CALIBRATING` and `CAL_REQUIRED` states; don't 
 
 - `z` — recalibrate pressure at rest; counting remains inactive until an accepted baseline is available
 - `p` — re-read both BHI360 device IDs and status registers now (read-only)
+- `s` — read-only I2C ACK test for known addresses (A 0x68, A 0x29, B 0x29)
 - `h` — show help
 
 The firmware also probes IMUs automatically approximately every 2 seconds between pressure conversions. **There are no `c`, `b`, or `u` BHI360 upload commands in this new program.**
@@ -103,7 +122,7 @@ The firmware also probes IMUs automatically approximately every 2 seconds betwee
    & "$env:USERPROFILE\.platformio\penv\Scripts\platformio.exe" device monitor -p COM3 -b 115200 -f send_on_enter
    ```
 
-6. Observe `# IMU,CHEST,...` and `# IMU,HEAD,...`. If both have `identified=1`, verify the pressure CSV has `sample_ok=1`. With no pressure applied, type **`z`** and press Enter; keep pressure at rest until `# READY`.
+6. Observe `# IMU,CHEST,...` and `# IMU,HEAD,...`. First run `s` and check Bus A ACK; only if pressure and IMU communication is working, verify `sample_ok=1`. With no pressure applied, type **`z`** and press Enter; keep pressure at rest until `# READY`.
 7. Using a gentle, controlled bench syringe setup, apply and release a pressure excursion. Confirm raw counts change, the baseline stays fixed, and an appropriate candidate event may be counted. Do not infer airflow, lung volume or patient ventilation effectiveness.
 8. Type **`p`** while the system is running. Confirm both IMU identity/status lines still print, without disturbing the pressure reading. Share the first serial output and any faults.
 
