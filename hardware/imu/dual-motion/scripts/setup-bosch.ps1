@@ -31,7 +31,9 @@ try {
         Copy-Item (Join-Path $tempDir "source\$source") $vendor -Force
     }
 
-    # System and virtual-sensor parameter implementations are required to link\n    # bhi360_update_virtual_sensor_list() in Bosch's core driver.\n    # Remove stale copy from first setup (otherwise PlatformIO still compiles it).
+    # System and virtual-sensor parameter implementations are required to link
+    # bhi360_update_virtual_sensor_list() in Bosch's core driver.
+    # Remove stale copy from first setup (otherwise PlatformIO still compiles it).
     $oldParser = Join-Path $vendor 'bhi360_parse.c'
     if (Test-Path $oldParser) { Remove-Item $oldParser -Force }
 
