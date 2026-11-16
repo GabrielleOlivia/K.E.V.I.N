@@ -30,6 +30,8 @@ void SERCOM2_Handler() { WireSensorB.onService(); }
 constexpr uint8_t EXPECTED_FUSER2_ID = 0x89;
 constexpr uint8_t EXPECTED_CHIP_ID = 0x7A;
 constexpr uint32_t IMU_PROBE_INTERVAL_MS = 2000;
+constexpr uint32_t PRESSURE_FAULT_REPORT_INTERVAL_MS = 5000;
+constexpr uint32_t PRESSURE_FAILURE_SAMPLE_LOG_INTERVAL_MS = 1000;
 
 struct ImuStatus {
     bool identified;
@@ -42,6 +44,74 @@ struct ImuStatus {
 ImuStatus chestImu = {};
 ImuStatus headImu = {};
 uint32_t lastImuProbeMs = 0;
+
+// Track WHY an ADC sample fails; do not confuse a missing MCP3426
+// (address NACK) with an ADC that responds with RDY=1 or a wrong config.
+enum PressureReadFault : uint8_t
+{
+    PRESSURE_OK = 0,
+    PRESSURE_CONFIG_WRITE_FAILED = 1,
+    PRESSURE_SHORT_READ = 2,
+    PRESSURE_STILL_CONVERTING = 3,
+    PRESSURE_CONFIG_MISMATCH = 4
+};
+PressureReadFault lastPressureFault = PRESSURE_OK;
+uint8_t lastPressureWireStatus = 0;
+uint8_t lastPressureReadCount = 0;
+uint8_t lastPressureAdcConfig = 0;
+uint32_t lastPressureFaultReportMs = 0;
+uint32_t lastPressureFailureSampleMs = 0;
+PressureReadFault lastReportedPressureFault = PRESSURE_OK;
+uint8_t lastReportedPressureWireStatus = 0;
+
+const char *pressureFaultName(PressureReadFault reason)
+{
+    switch (reason)
+    {
+        case PRESSURE_CONFIG_WRITE_FAILED: return "config_write_failed";
+        case PRESSURE_SHORT_READ: return "short_adc_read";
+        case PRESSURE_STILL_CONVERTING: return "adc_not_ready";
+        case PRESSURE_CONFIG_MISMATCH: return "returned_config_mismatch";
+        default: return "none";
+    }
+}
+
+void printPressureFaultDetails()
+{
+    Serial.print("# ADC_DIAG reason=");
+    Serial.print(pressureFaultName(lastPressureFault));
+    Serial.print(" wire_status=");
+    Serial.print(lastPressureWireStatus);
+    Serial.print(" rx_count=");
+    Serial.print(lastPressureReadCount);
+    Serial.print(" returned_config=0x");
+    Serial.println(lastPressureAdcConfig, HEX);
+}
+
+void printAddressAck(TwoWire &bus, const char *busName, uint8_t addr, const char *device)
+{
+    bus.beginTransmission(addr);
+    const uint8_t result = bus.endTransmission(true);
+    Serial.print("# BUS_CHECK bus=");
+    Serial.print(busName);
+    Serial.print(" device=");
+    Serial.print(device);
+    Serial.print(" address=0x");
+    Serial.print(addr, HEX);
+    Serial.print(" wire_status=");
+    Serial.print(result);
+    Serial.print(" ack=");
+    Serial.println(result == 0 ? 1 : 0);
+}
+
+void checkBusAddresses()
+{
+    Serial.println("# BUS_CHECK_BEGIN (address ACK only; no firmware writes)");
+    printAddressAck(WireSensorA, "A", MCP3426_ADDR, "PRESSURE_ADC");
+    printAddressAck(WireSensorA, "A", BHI360_ADDR, "CHEST_IMU");
+    printAddressAck(WireSensorB, "B", BHI360_ADDR, "HEAD_IMU");
+    Serial.println("# BUS_CHECK_END");
+}
 
 bool pinsMatch(uint8_t index, uint32_t port, uint32_t pin)
 {
@@ -143,35 +213,47 @@ bool havePreviousCandidate = false;
 bool readPressureADC(int16_t &rawValue)
 {
     const uint8_t config = 0x88;
+    lastPressureFault = PRESSURE_OK;
+    lastPressureWireStatus = 0;
+    lastPressureReadCount = 0;
+    lastPressureAdcConfig = 0;
+
     WireSensorA.beginTransmission(MCP3426_ADDR);
     WireSensorA.write(config);
-    if (WireSensorA.endTransmission() != 0)
+    lastPressureWireStatus = WireSensorA.endTransmission(true);
+    if (lastPressureWireStatus != 0)
     {
+        lastPressureFault = PRESSURE_CONFIG_WRITE_FAILED;
         return false;
     }
 
     delay(100);
-    const uint8_t count = WireSensorA.requestFrom(MCP3426_ADDR, (uint8_t)3);
+    const uint8_t count = WireSensorA.requestFrom(MCP3426_ADDR, static_cast<uint8_t>(3));
+    lastPressureReadCount = count;
     if (count != 3)
     {
+        lastPressureFault = PRESSURE_SHORT_READ;
         // Discard a partial response; never use it as a pressure sample.
-        while (WireSensorA.available())
-        {
-            WireSensorA.read();
-        }
+        while (WireSensorA.available()) WireSensorA.read();
         return false;
     }
 
     const uint8_t highByte = WireSensorA.read();
     const uint8_t lowByte = WireSensorA.read();
     const uint8_t status = WireSensorA.read();
-    // RDY must be clear and the returned configuration must match our request.
-    if ((status & 0x80) || ((status & 0x7F) != (config & 0x7F)))
+    lastPressureAdcConfig = status;
+    if (status & 0x80)
     {
+        lastPressureFault = PRESSURE_STILL_CONVERTING;
+        return false;
+    }
+    if ((status & 0x7F) != (config & 0x7F))
+    {
+        lastPressureFault = PRESSURE_CONFIG_MISMATCH;
         return false;
     }
 
-    rawValue = (int16_t)(((uint16_t)highByte << 8) | lowByte);
+    rawValue = static_cast<int16_t>((static_cast<uint16_t>(highByte) << 8) | lowByte);
     return true;
 }
 
@@ -431,7 +513,7 @@ void setup()
     {
     }
 
-    Serial.println("# KEVIN PRESSURE + DUAL IMU v0.1 ID ONLY; no fusion firmware writes");
+    Serial.println("# KEVIN PRESSURE + DUAL IMU v0.2 BUS-A DIAGNOSTIC (no firmware writes)");
     Serial.println("# Pressure sensor: MCP3426 @0x68, A2; CHEST @0x29, A1; HEAD @0x29, B1");
     Serial.println("# Candidate pressure events only, not infant ventilation or calibrated pressure");
     Serial.println("t_ms,raw,baseline,delta,state,candidate_count,sample_ok,baseline_ok");
@@ -457,8 +539,9 @@ void setup()
     WireSensorB.setClock(100000);
 
     delay(200);
+    checkBusAddresses();
     probeBothImus();
-    Serial.println("# Commands: z=calibrate pressure at rest; p=probe IMUs; h=help");
+    Serial.println("# Commands: s=I2C ACK check; p=read-only IMU probe; z=pressure calibration; h=help");
 
     // Manual-only calibration: stay in CAL_REQUIRED until the dashboard/user
     // explicitly sends 'z'. A valid baseline then remains fixed until another
@@ -471,17 +554,20 @@ void loop()
 {
     bool recalibrate = false;
     bool forceProbe = false;
+    bool forceBusCheck = false;
     while (Serial.available())
     {
         const char command = static_cast<char>(Serial.read());
         if (command == 'z' || command == 'Z') recalibrate = true;
         if (command == 'p' || command == 'P') forceProbe = true;
+        if (command == 's' || command == 'S') forceBusCheck = true;
         if (command == 'h' || command == 'H')
         {
-            Serial.println("# z=calibrate pressure at rest; p=read-only IMU probe; h=help");
+            Serial.println("# s=I2C ACK check; p=read-only IMU probe; z=pressure calibration; h=help");
             Serial.println("# IMU orientation NOT available. 'identified=1' does not mean motion works.");
         }
     }
+    if (forceBusCheck) checkBusAddresses();
     if (forceProbe ||
         static_cast<uint32_t>(millis() - lastImuProbeMs) >= IMU_PROBE_INTERVAL_MS)
     {
@@ -501,8 +587,24 @@ void loop()
         // Keep the last valid baseline through transient ADC/read failures.
         // The bad sample is discarded, but the user does not have to recalibrate.
         // A new baseline is only created when the user explicitly sends 'z'.
-        Serial.println("# ADC_FAULT: sample discarded; previous baseline retained.");
-        printSample(tMs, false, 0, stateName());
+        // Keep a useful fault message, but avoid flooding Serial Monitor
+        // with the same failure every 200 ms when Bus A is disconnected.
+        const bool changed = lastPressureFault != lastReportedPressureFault ||
+                             lastPressureWireStatus != lastReportedPressureWireStatus;
+        if (changed ||
+            static_cast<uint32_t>(tMs - lastPressureFaultReportMs) >= PRESSURE_FAULT_REPORT_INTERVAL_MS)
+        {
+            Serial.println("# ADC_FAULT: sample discarded; previous baseline retained.");
+            printPressureFaultDetails();
+            lastPressureFaultReportMs = tMs;
+            lastReportedPressureFault = lastPressureFault;
+            lastReportedPressureWireStatus = lastPressureWireStatus;
+        }
+        if (static_cast<uint32_t>(tMs - lastPressureFailureSampleMs) >= PRESSURE_FAILURE_SAMPLE_LOG_INTERVAL_MS)
+        {
+            printSample(tMs, false, 0, stateName());
+            lastPressureFailureSampleMs = tMs;
+        }
         delay(200);
         return;
     }
