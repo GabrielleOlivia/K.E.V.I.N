@@ -1,6 +1,11 @@
-# K.E.V.I.N. — Dual BHI360 motion-stream prototype (v0.8: 6144-byte postmortem buffer)
+# K.E.V.I.N. — Dual BHI360 motion-stream prototype (v0.9: corrected postmortem decoding)
 
-**Status:** Earlier v0.2 compiled and flashed successfully on SAMD21, but neither BHI360 booted motion firmware. v0.3 preflight **built, flashed, and passed on both IMUs**. v0.4 was built and flashed; the CHEST attempt failed with Wire status 3 (data NACK) on register 0x00, 28 bytes, Bosch error `0x44` (unhandled interrupt / exception; postmortem potentially available). v0.5 was compiled and uploaded; the chest IMU NACKed write #4 after accepting just 84 command-channel bytes in 13 ms, and reported fatal error `0x44`, debug state `0x0B`. v0.6 compiled and ran on the SAMD21; manually requesting a CHEST postmortem after restarting/uploading returned `error=0x00` and skipped the request, so crash evidence was not available at that time. v0.7 compiled and ran on hardware; after the chest upload failed with `0x44`, Bosch reported a **4300-byte** postmortem response but returned `-6` because our diagnostic buffer held only 4096 bytes. **v0.8 is committed but has not yet been built or hardware-tested.** On 2026-11-16: chest firmware upload had error value `0x11` (bad header CRC); head firmware verification succeeded (`0x38`) but boot produced `0x1B` (fatal firmware error). No motion/quaternion data obtained. Preserve the proven `hardware/imu/diagnostics` project. For infant *manikin simulation only*, not clinical or patient monitoring.
+**Status:** Earlier v0.2 compiled and flashed successfully on SAMD21, but neither BHI360 booted motion firmware. v0.3 preflight **built, flashed, and passed on both IMUs**. v0.4 was built and flashed; the CHEST attempt failed with Wire status 3 (data NACK) on register 0x00, 28 bytes, Bosch error `0x44` (unhandled interrupt / exception; postmortem potentially available). v0.5 was compiled and uploaded; the chest IMU NACKed write #4 after accepting just 84 command-channel bytes in 13 ms, and reported fatal error `0x44`, debug state `0x0B`. v0.6 compiled and ran on the SAMD21; manually requesting a CHEST postmortem after restarting/uploading returned `error=0x00` and skipped the request, so crash evidence was not available at that time. v0.7 compiled and ran on hardware; after the chest upload failed with `0x44`, Bosch reported a **4300-byte** postmortem response but returned `-6` because our diagnostic buffer held only 4096 bytes. v0.8 **successfully built, flashed and retrieved a 4300-byte CHEST postmortem**, confirming unhandled interrupt `0x44` after three successful 28-byte host-channel writes. Its initial decoded-field offsets were wrong; v0.9 corrects the decoder according to Bosch datasheet Table 34. **v0.9 has not yet been compiled or hardware-tested.** On 2026-11-16: chest firmware upload had error value `0x11` (bad header CRC); head firmware verification succeeded (`0x38`) but boot produced `0x1B` (fatal firmware error). No motion/quaternion data obtained. Preserve the proven `hardware/imu/diagnostics` project. For infant *manikin simulation only*, not clinical or patient monitoring.
+
+## Evidence saved in repository
+
+- [2026-11-16 CHEST crash dump, exact 224-byte prefix, Bosch Table 34 decoded fields](diagnostics/2026-11-16-chest-crash-v0.8.md)
+- The decoder in v0.8 wrongly subtracted 4 bytes from Table 34 offsets. The corrected offsets give `crash_valid=1`, `flags=0x06`, `stack_size=4096`, `reset_reason=0x04`, `error_report=0x44`. v0.9 source fixes this; these conclusions come directly from the already captured v0.8 hex dump, so **no immediate new upload is required**.
 
 ## Hardware confirmed by diagnostic output (2026-11-16)
 
@@ -11,11 +16,11 @@
 
 Both devices were read twice successfully. This does not prove firmware/sensor fusion is running. Connect/disconnect sensors only with USB power removed. Do not alter wiring that gave the successful identification output.
 
-## Current controlled diagnostic (v0.8)
+## Current controlled diagnostic (v0.9)
 
 On power-up the program performs **read-only preflight** for both modules, displaying FUSER2 ID, chip ID, revision, ROM version, boot status, error code and error auxiliary register. It **does not automatically reset or upload firmware**. This prevents inadvertently repeating failed firmware operations on each USB reconnection or MCU reset.
 
-**Stop after preflight and review both sensors' error registers.** If the CHEST error is 0x00, a *single* explicitly requested CHEST upload (`c`) can reproduce the issue with immediate postmortem collection, without reset/reflash between failure and crash capture. The static postmortem buffer is now 6144 bytes, compared with the 4300-byte payload reported by the chip. The SAMD21 build must be checked for RAM use first. This is an optional next diagnostic, not evidence that the root cause is fixed. The former `u` command that affected both sensors remains disabled.
+**Stop firmware-upload retries for now.** The v0.8 capture provides a valid crash report already: flags `0x06`, stack size 4096, reset reason `0x04`, error report `0x44` (unhandled interrupt), ECR `0x00020100`. We do not need another `c`/ `b` test simply to reproduce that information. Preserve the existing working preflight and do not change wiring under power. The former `u` command that affected both sensors remains disabled.
 
 Serial commands:
 - `p`: repeat read-only preflight
@@ -57,10 +62,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\setup-bosch.ps1
 
 If the port number changes, substitute the detected port.
 
-Expected *illustrative only* v0.8 read-only preflight beginning:
+Expected *illustrative only* v0.9 read-only preflight beginning:
 
 ```text
-# KEVIN Dual BHI360 GameRV v0.8 LARGE-POSTMORTEM
+# KEVIN Dual BHI360 GameRV v0.9 CRASH-DECODE-FIX
 # Sensor A1=CHEST, Sensor B1=HEAD, both at I2C 0x29
 # CHEST PREFLIGHT_BEGIN (reads only)
 # CHEST fuser2_id=0x89
