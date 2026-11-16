@@ -59,7 +59,11 @@ try {
     }
     [System.IO.File]::WriteAllText($defsPath, $defs)
 
-    Copy-Item (Join-Path $tempDir 'firmware\bhi360\Bosch_Shuttle3_BHI360_bsxsam.fw.h') $firmware -Force
+    # Use Bosch's lighter 6-axis image to isolate previous firmware-boot errors.
+    # Avoid silently picking up the former full BSX firmware on subsequent builds.
+    $oldImage = Join-Path $firmware 'Bosch_Shuttle3_BHI360_bsxsam.fw.h'
+    if (Test-Path $oldImage) { Remove-Item $oldImage -Force }
+    Copy-Item (Join-Path $tempDir 'firmware\bhi360\Bosch_Shuttle3_BHI360_bsxsam_lite.fw.h') $firmware -Force
     Copy-Item (Join-Path $tempDir 'LICENSE') (Join-Path $project 'lib\BoschBHI360\LICENSE') -Force
 
     Write-Host 'Bosch core SDK and firmware installed. COINES-only parser excluded; C++ compatibility adjusted.' -ForegroundColor Green
