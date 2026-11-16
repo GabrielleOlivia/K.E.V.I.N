@@ -27,6 +27,8 @@ constexpr uint8_t FUSER2_ID_EXPECTED = 0x89; // verified with existing probe
 constexpr uint32_t SAMPLE_INTERVAL_MS = 25; // poll each at ~40Hz, configured 25Hz
 constexpr uint32_t PRINT_INTERVAL_MS = 100; // print latest snapshots at up to 10Hz
 constexpr size_t FIFO_BUFFER_SIZE = 512;
+constexpr size_t POSTMORTEM_BUFFER_SIZE = 4096;
+constexpr size_t POSTMORTEM_PRINT_LIMIT = 224;
 // Diagnostic experiment: allow the BHI360 command-channel consumer to
 // catch up between consecutive 28-byte chunks. 28 is word-aligned (4 bytes).
 constexpr uint32_t FW_UPLOAD_PACING_US = 1000;
@@ -34,6 +36,8 @@ constexpr uint32_t FW_UPLOAD_PACING_US = 1000;
 TwoWire busA(&sercom1, SDA_A, SCL_A);
 TwoWire busB(&sercom2, SDA_B, SCL_B);
 uint8_t fifoBuffer[FIFO_BUFFER_SIZE];
+// Static allocation avoids overflowing the SAMD21 call stack during crash retrieval.
+uint8_t postmortemBuffer[POSTMORTEM_BUFFER_SIZE];
 
 struct Imu {
   const char* label;
@@ -85,26 +89,34 @@ int8_t boschRead(uint8_t reg, uint8_t *data, uint32_t len, void *context) {
   auto* imu = static_cast<Imu*>(context);
   if (!imu) return -1;
   imu->lastWireStage = 0;
-  if (!data || !len || len > 28) {
+  // Regular register reads remain limited to 28 bytes; the status FIFO,
+  // used for Bosch postmortem responses, supports sequential chunk reads.
+  if (!data || !len || (len > 28 && reg != BHI360_REG_CHAN_STATUS)) {
     markI2cFailure(*imu, 5, 0, reg, len);
     return -1;
   }
   TwoWire& wire = *imu->wire;
-  wire.beginTransmission(SENSOR_ADDRESS);
-  wire.write(reg);
-  uint8_t status = wire.endTransmission(false);
-  if (status != 0) {
-    markI2cFailure(*imu, 1, status, reg, len);
-    return -1;
+  uint32_t offset = 0;
+  while (offset < len) {
+    const uint8_t requested = static_cast<uint8_t>((len - offset) > 28 ? 28 : (len - offset));
+    wire.beginTransmission(SENSOR_ADDRESS);
+    wire.write(reg);
+    const uint8_t status = wire.endTransmission(false);
+    if (status != 0) {
+      markI2cFailure(*imu, 1, status, reg, requested);
+      return -1;
+    }
+    const uint8_t received = wire.requestFrom(SENSOR_ADDRESS, requested, static_cast<uint8_t>(true));
+    if (received != requested) {
+      markI2cFailure(*imu, 2, received, reg, requested);
+      while (wire.available()) wire.read();
+      return -1;
+    }
+    for (uint8_t i = 0; i < requested; ++i) {
+      data[offset + i] = static_cast<uint8_t>(wire.read());
+    }
+    offset += requested;
   }
-  const uint8_t requested = static_cast<uint8_t>(len);
-  uint8_t received = wire.requestFrom(SENSOR_ADDRESS, requested, static_cast<uint8_t>(true));
-  if (received != requested) {
-    markI2cFailure(*imu, 2, received, reg, len);
-    while (wire.available()) wire.read();
-    return -1;
-  }
-  for (uint32_t i = 0; i < len; ++i) data[i] = static_cast<uint8_t>(wire.read());
   return 0;
 }
 
@@ -219,6 +231,74 @@ void printDiagnostics(Imu& imu, const char* phase) {
     Serial.print(" debug_value=0x"); Serial.print(debugValue, HEX);
   }
   Serial.println();
+}
+
+// Query the official Bosch postmortem command (0x0001).
+// This is NOT a firmware upload or a reboot. It may still fail if the ROM
+// does not accept commands after a fatal error.
+void requestPostmortem(Imu& imu) {
+  Serial.print("# "); Serial.print(imu.label); Serial.println(" POSTMORTEM_BEGIN");
+  uint8_t chip = 0;
+  if (!readChipId(*imu.wire, chip) || chip != FUSER2_ID_EXPECTED) {
+    Serial.println("# POSTMORTEM_ABORT: device ID unavailable");
+    return;
+  }
+  const int8_t initResult = bhi360_init(BHI360_I2C_INTERFACE, boschRead, boschWrite,
+                                       boschDelay, 28, &imu, &imu.dev);
+  Serial.print("# "); Serial.print(imu.label);
+  Serial.print(" postmortem_api_bind_result="); Serial.println(static_cast<int>(initResult));
+  if (initResult != BHI360_OK) return;
+  uint8_t error = 0;
+  int8_t rc = bhi360_get_error_value(&error, &imu.dev);
+  Serial.print("# "); Serial.print(imu.label);
+  Serial.print(" before_postmortem_error_result="); Serial.print(static_cast<int>(rc));
+  if (rc == BHI360_OK) {
+    Serial.print(" error=0x"); Serial.print(error, HEX);
+  }
+  Serial.println();
+  if (rc != BHI360_OK || error == 0) {
+    Serial.println("# POSTMORTEM_SKIPPED: no recorded error (or error register inaccessible)");
+    return;
+  }
+  uint32_t actualLength = 0;
+  const int8_t result = bhi360_get_post_mortem_data(postmortemBuffer,
+                                      sizeof(postmortemBuffer), &actualLength, &imu.dev);
+  Serial.print("# "); Serial.print(imu.label);
+  Serial.print(" postmortem_result="); Serial.print(static_cast<int>(result));
+  Serial.print(" postmortem_bytes="); Serial.println(actualLength);
+  if (result != BHI360_OK) {
+    Serial.print("# "); Serial.print(imu.label);
+    Serial.print(" postmortem_wire_stage="); Serial.print(imu.lastWireStage);
+    Serial.print(" status="); Serial.print(imu.lastWireStatus);
+    Serial.print(" reg=0x"); Serial.println(imu.lastWireRegister, HEX);
+    Serial.println("# POSTMORTEM_END (request failed)");
+    return;
+  }
+  // Bosch datasheet Crash Dump response (Table 34):
+  // the API strips the 4-byte status packet header.
+  // 0x84: validity, 0x85: flags, 0xAF: exception reason.
+  if (actualLength > 0xAB) {
+    Serial.print("# "); Serial.print(imu.label);
+    Serial.print(" crash_valid="); Serial.print(postmortemBuffer[0x84 - 4]);
+    Serial.print(" crash_flags=0x"); Serial.print(postmortemBuffer[0x85 - 4], HEX);
+    Serial.print(" reset_reason=0x"); Serial.print(postmortemBuffer[0xAD - 4], HEX);
+    Serial.print(" exception_reason=0x"); Serial.println(postmortemBuffer[0xAF - 4], HEX);
+  }
+  const uint32_t shown = actualLength > POSTMORTEM_PRINT_LIMIT ?
+      POSTMORTEM_PRINT_LIMIT : actualLength;
+  Serial.print("# "); Serial.print(imu.label);
+  Serial.print(" postmortem_hex_prefix_bytes="); Serial.println(shown);
+  for (uint32_t pos = 0; pos < shown; pos += 16) {
+    Serial.print("# DUMP ");
+    Serial.print(pos, HEX); Serial.print(":");
+    for (uint32_t i = pos; i < shown && i < pos + 16; ++i) {
+      Serial.print(' ');
+      if (postmortemBuffer[i] < 16) Serial.print('0');
+      Serial.print(postmortemBuffer[i], HEX);
+    }
+    Serial.println();
+  }
+  Serial.print("# "); Serial.print(imu.label); Serial.println(" POSTMORTEM_END");
 }
 
 // Read-only preflight. Does not soft-reset, upload, boot, or configure fusion.
@@ -414,7 +494,7 @@ void setup() {
   Serial.begin(115200);
   const uint32_t start = millis();
   while (!Serial && millis() - start < 3500) delay(10);
-  Serial.println("# KEVIN Dual BHI360 GameRV v0.5 PACED-TRANSFER DIAGNOSTIC");
+  Serial.println("# KEVIN Dual BHI360 GameRV v0.6 POSTMORTEM DIAGNOSTIC");
   Serial.println("# Sensor A1=CHEST, Sensor B1=HEAD, both at I2C 0x29");
   if (!pinsMatch(SDA_A, PORTA, 16) || !pinsMatch(SCL_A, PORTA, 17) ||
       !pinsMatch(SDA_B, PORTA, 12) || !pinsMatch(SCL_B, PORTA, 13)) {
@@ -432,21 +512,29 @@ void setup() {
   // Never issue firmware commands automatically when MCU is power-cycled or reset.
   preflight(chest);
   preflight(head);
-  Serial.println("# Commands: p=read-only preflight; c=test CHEST once; b=test HEAD once; h=help");
-  Serial.println("# At startup no firmware is uploaded. Review log before typing c or b.");
+  Serial.println("# Commands: p=read-only preflight; d=CHEST crash dump; c=CHEST upload; b=HEAD upload; h=help");
+  Serial.println("# NEXT STEP: send d ONLY to request retained CHEST crash data; no new firmware upload.");
 }
 
 void loop() {
   static uint32_t lastPoll = 0, lastPrint = 0;
   static bool attemptedChest = false;
   static bool attemptedHead = false;
+  static bool requestedDumpChest = false;
   while (Serial.available()) {
     const char c = static_cast<char>(Serial.read());
     if (c == 'p' || c == 'P') {
       preflight(chest);
       preflight(head);
     } else if (c == 'h' || c == 'H') {
-      Serial.println("# p=preflight reads; c=one CHEST upload/boot; b=one HEAD upload/boot; h=help");
+      Serial.println("# p=preflight reads; d=CHEST postmortem; c=one CHEST upload; b=one HEAD upload");
+    } else if (c == 'd' || c == 'D') {
+      if (requestedDumpChest) {
+        Serial.println("# CHEST postmortem already requested in this MCU session");
+      } else {
+        requestedDumpChest = true;
+        requestPostmortem(chest);
+      }
     } else if (c == 'c' || c == 'C') {
       if (attemptedChest) {
         Serial.println("# CHEST upload already attempted this MCU session. Power-cycle before repeating.");
