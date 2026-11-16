@@ -23,13 +23,15 @@ try {
         'bhi360.c',
         'bhi360_hif.c',
         'bhi360_event_data.c',
+        'bhi360_system_param.c',
+        'bhi360_virtual_sensor_info_param.c',
         'bhi360_virtual_sensor_conf_param.c'
     )
     foreach ($source in $sources) {
         Copy-Item (Join-Path $tempDir "source\$source") $vendor -Force
     }
 
-    # Remove stale copy from first setup (otherwise PlatformIO still compiles it).
+    # System and virtual-sensor parameter implementations are required to link\n    # bhi360_update_virtual_sensor_list() in Bosch's core driver.\n    # Remove stale copy from first setup (otherwise PlatformIO still compiles it).
     $oldParser = Join-Path $vendor 'bhi360_parse.c'
     if (Test-Path $oldParser) { Remove-Item $oldParser -Force }
 
