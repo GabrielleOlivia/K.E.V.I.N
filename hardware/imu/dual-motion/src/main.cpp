@@ -42,6 +42,11 @@ struct Imu {
   float accuracyRad;
   uint32_t lastMotionMs;
   uint32_t errorCount;
+  // Trace most recent low-level I2C failure during firmware transfer.
+  uint8_t lastWireStatus;
+  uint8_t lastWireStage; // 1=write address/register, 2=short read, 3=TX overflow, 4=TX NACK
+  uint8_t lastWireRegister;
+  uint32_t lastWireLength;
 };
 Imu chest = {"CHEST", &busA, {}, false, false, 0, 0, 0, 1, 0, 0, 0};
 Imu head  = {"HEAD",  &busB, {}, false, false, 0, 0, 0, 1, 0, 0, 0};
@@ -60,15 +65,34 @@ bool readChipId(TwoWire& wire, uint8_t& id) {
 }
 
 // Bosch callback. The register is sent as the I2C register pointer (no SPI masking).
+// Trace only the last failed transfer; do not print inside I2C callbacks.
+void markI2cFailure(Imu& imu, uint8_t stage, uint8_t status, uint8_t reg, uint32_t len) {
+  imu.lastWireStage = stage;
+  imu.lastWireStatus = status;
+  imu.lastWireRegister = reg;
+  imu.lastWireLength = len;
+}
+
 int8_t boschRead(uint8_t reg, uint8_t *data, uint32_t len, void *context) {
   auto* imu = static_cast<Imu*>(context);
-  if (!imu || !data || !len || len > 28) return -1;
+  if (!imu) return -1;
+  imu->lastWireStage = 0;
+  if (!data || !len || len > 28) {
+    markI2cFailure(*imu, 5, 0, reg, len);
+    return -1;
+  }
   TwoWire& wire = *imu->wire;
   wire.beginTransmission(SENSOR_ADDRESS);
   wire.write(reg);
-  if (wire.endTransmission(false) != 0) return -1;
+  uint8_t status = wire.endTransmission(false);
+  if (status != 0) {
+    markI2cFailure(*imu, 1, status, reg, len);
+    return -1;
+  }
   const uint8_t requested = static_cast<uint8_t>(len);
-  if (wire.requestFrom(SENSOR_ADDRESS, requested, static_cast<uint8_t>(true)) != requested) {
+  uint8_t received = wire.requestFrom(SENSOR_ADDRESS, requested, static_cast<uint8_t>(true));
+  if (received != requested) {
+    markI2cFailure(*imu, 2, received, reg, len);
     while (wire.available()) wire.read();
     return -1;
   }
@@ -78,12 +102,26 @@ int8_t boschRead(uint8_t reg, uint8_t *data, uint32_t len, void *context) {
 
 int8_t boschWrite(uint8_t reg, const uint8_t *data, uint32_t len, void *context) {
   auto* imu = static_cast<Imu*>(context);
-  if (!imu || (len && !data) || len > 28) return -1;
+  if (!imu) return -1;
+  imu->lastWireStage = 0;
+  if ((len && !data) || len > 28) {
+    markI2cFailure(*imu, 5, 0, reg, len);
+    return -1;
+  }
   TwoWire& wire = *imu->wire;
   wire.beginTransmission(SENSOR_ADDRESS);
   wire.write(reg);
-  if (len && wire.write(data, len) != len) { wire.endTransmission(true); return -1; }
-  return wire.endTransmission(true) == 0 ? 0 : -1;
+  if (len && wire.write(data, len) != len) {
+    markI2cFailure(*imu, 3, 0, reg, len);
+    wire.endTransmission(true);
+    return -1;
+  }
+  const uint8_t status = wire.endTransmission(true);
+  if (status != 0) {
+    markI2cFailure(*imu, 4, status, reg, len);
+    return -1;
+  }
+  return 0;
 }
 
 void boschDelay(uint32_t microseconds, void*) {
@@ -110,6 +148,41 @@ bool checked(const char* operation, int8_t result, const Imu& imu) {
   Serial.print("# "); Serial.print(imu.label); Serial.print(' ');
   Serial.print(operation); Serial.print(" result="); Serial.println(static_cast<int>(result));
   return result == BHI360_OK;
+}
+
+// Post-failure snapshot: status bits help distinguish bus failures from
+// firmware verification/boot failure. No config writes or retries here.
+void printDiagnostics(Imu& imu, const char* phase) {
+  Serial.print("# "); Serial.print(imu.label);
+  Serial.print(" DIAG phase="); Serial.println(phase);
+  Serial.print("# "); Serial.print(imu.label);
+  Serial.print(" I2C stage="); Serial.print(imu.lastWireStage);
+  Serial.print(" status="); Serial.print(imu.lastWireStatus);
+  Serial.print(" reg=0x"); Serial.print(imu.lastWireRegister, HEX);
+  Serial.print(" length="); Serial.print(imu.lastWireLength);
+  Serial.print(" api_intf_result="); Serial.println(static_cast<int>(imu.dev.hif.intf_rslt));
+
+  // The following reads are observational only; they do not reset the BHI360.
+  uint8_t boot = 0;
+  int8_t result = bhi360_get_boot_status(&boot, &imu.dev);
+  Serial.print("# "); Serial.print(imu.label);
+  Serial.print(" boot_status_read_result="); Serial.print(static_cast<int>(result));
+  if (result == BHI360_OK) {
+    Serial.print(" boot=0x"); Serial.print(boot, HEX);
+    Serial.print(" host_ready="); Serial.print((boot & BHI360_BST_HOST_INTERFACE_READY) != 0);
+    Serial.print(" verify_done="); Serial.print((boot & BHI360_BST_HOST_FW_VERIFY_DONE) != 0);
+    Serial.print(" verify_error="); Serial.print((boot & BHI360_BST_HOST_FW_VERIFY_ERROR) != 0);
+  }
+  Serial.println();
+
+  uint8_t sensorError = 0;
+  result = bhi360_get_error_value(&sensorError, &imu.dev);
+  Serial.print("# "); Serial.print(imu.label);
+  Serial.print(" sensor_error_read_result="); Serial.print(static_cast<int>(result));
+  if (result == BHI360_OK) {
+    Serial.print(" sensor_error=0x"); Serial.print(sensorError, HEX);
+  }
+  Serial.println();
 }
 
 bool initImu(Imu& imu) {
@@ -141,9 +214,19 @@ bool initImu(Imu& imu) {
   Serial.print("# "); Serial.print(imu.label);
   Serial.print(" loading "); Serial.print(sizeof(bhi360_firmware_image));
   Serial.println(" firmware bytes to BHI360 RAM; do not disconnect USB");
-  if (!checked("firmware_upload", bhi360_upload_firmware_to_ram(
-      bhi360_firmware_image, sizeof(bhi360_firmware_image), &imu.dev), imu)) return false;
-  if (!checked("boot_from_ram", bhi360_boot_from_ram(&imu.dev), imu)) return false;
+  const int8_t uploadResult = bhi360_upload_firmware_to_ram(
+      bhi360_firmware_image, sizeof(bhi360_firmware_image), &imu.dev);
+  if (!checked("firmware_upload", uploadResult, imu)) {
+    printDiagnostics(imu, "firmware_upload_failed");
+    return false;
+  }
+  // Always show verification status after transfer, before asking for boot.
+  printDiagnostics(imu, "firmware_uploaded_before_boot");
+  const int8_t bootResult = bhi360_boot_from_ram(&imu.dev);
+  if (!checked("boot_from_ram", bootResult, imu)) {
+    printDiagnostics(imu, "boot_from_ram_failed");
+    return false;
+  }
   uint16_t kernel = 0;
   if (!checked("kernel_version", bhi360_get_kernel_version(&kernel, &imu.dev), imu)) return false;
   Serial.print("# "); Serial.print(imu.label); Serial.print(" kernel="); Serial.println(kernel);
@@ -195,7 +278,7 @@ void setup() {
   Serial.begin(115200);
   const uint32_t start = millis();
   while (!Serial && millis() - start < 3500) delay(10);
-  Serial.println("# KEVIN Dual BHI360 GameRV v0.1 EXPERIMENTAL");
+  Serial.println("# KEVIN Dual BHI360 GameRV v0.2 DIAGNOSTIC");
   Serial.println("# Sensor A1=CHEST, Sensor B1=HEAD, both at I2C 0x29");
   if (!pinsMatch(SDA_A, PORTA, 16) || !pinsMatch(SCL_A, PORTA, 17) ||
       !pinsMatch(SDA_B, PORTA, 12) || !pinsMatch(SCL_B, PORTA, 13)) {
