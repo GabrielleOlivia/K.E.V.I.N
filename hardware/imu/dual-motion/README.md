@@ -1,6 +1,6 @@
-# K.E.V.I.N. — Dual BHI360 motion-stream prototype (experimental v0.1)
+# K.E.V.I.N. — Dual BHI360 motion-stream prototype (read-only preflight v0.3)
 
-**Status:** Source prototype, **not compiled or tested on SAMD21 hardware yet**. Preserve the proven `hardware/imu/diagnostics` project. For infant *manikin simulation only*, not clinical or patient monitoring.
+**Status:** Earlier v0.2 compiled and flashed successfully on SAMD21, but neither BHI360 booted motion firmware. v0.3 changes are **not yet built or tested**. On 2026-11-16: chest firmware upload had error value `0x11` (bad header CRC); head firmware verification succeeded (`0x38`) but boot produced `0x1B` (fatal firmware error). No motion/quaternion data obtained. Preserve the proven `hardware/imu/diagnostics` project. For infant *manikin simulation only*, not clinical or patient monitoring.
 
 ## Hardware confirmed by diagnostic output (2026-11-16)
 
@@ -11,7 +11,18 @@
 
 Both devices were read twice successfully. This does not prove firmware/sensor fusion is running. Connect/disconnect sensors only with USB power removed. Do not alter wiring that gave the successful identification output.
 
-## What this project attempts
+## Current safe test (v0.3)
+
+On power-up the program performs **read-only preflight** for both modules, displaying FUSER2 ID, chip ID, revision, ROM version, boot status, error code and error auxiliary register. It **does not automatically reset or upload firmware**. This prevents inadvertently repeating failed firmware operations on each USB reconnection or MCU reset.
+
+**Stop after the preflight output and inspect it first. Do not send `u` until the results have been reviewed.**
+
+Serial commands:
+- `p`: repeat read-only preflight
+- `h`: show help
+- `u`: explicitly attempt firmware upload and boot on both IMUs **once per MCU session**. This remains experimental and may produce errors. **Do not use for the next test until instructed.**
+
+## What the eventual motion prototype attempts
 
 1. Verify each BHI360 FUSER2 identifier before configuration writes.
 2. Initialize two independent Bosch API instances on the separate I2C buses.
@@ -32,7 +43,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\setup-bosch.ps1
 ```
 
 4. Run **PlatformIO: Build** first. Verify flash/RAM usage; the SAMD21 has limited flash. If Build fails, **do not upload**—share the last error lines.
-5. Only if Build succeeds, run **PlatformIO: Upload** (this will replace the running diagnostic firmware, which remains preserved in Git).
+5. Only if Build succeeds, run **PlatformIO: Upload** (this replaces the currently flashed SAMD21 program; the earlier diagnostic remains preserved in Git). The *v0.3 application is read-only until explicitly commanded*.
 6. Open serial monitor:
 
 ```powershell
@@ -41,21 +52,20 @@ powershell -ExecutionPolicy Bypass -File .\scripts\setup-bosch.ps1
 
 If the port number changes, substitute the detected port.
 
-Expected *illustrative* boot lines:
+Expected *illustrative only* read-only preflight beginning:
 
 ```text
-# CHEST BHI360 ID verified
-# CHEST api_init result=0
-# CHEST enable_game_rotation_vector result=0
-# HEAD BHI360 ID verified
-# HEAD api_init result=0
-# HEAD enable_game_rotation_vector result=0
-# CSV: Q,LOCATION,host_ms,qx,qy,qz,qw,accuracy_rad,age_ms
-Q,CHEST,123456,0.01000,0.04000,0.00100,0.99900,0.05000,3
-Q,HEAD,123456,0.01200,0.23000,0.00300,0.97300,0.05000,4
+# KEVIN Dual BHI360 GameRV v0.3 PREFLIGHT
+# Sensor A1=CHEST, Sensor B1=HEAD, both at I2C 0x29
+# CHEST PREFLIGHT_BEGIN (reads only)
+# CHEST fuser2_id=0x89
+...
+# HEAD PREFLIGHT_BEGIN (reads only)
+...
+# STOP after preflight and share the log. Do NOT send u until the log is reviewed.
 ```
 
-This output is **not measured data**. If initialization produces an error or no `Q` lines appear, capture the exact output; stop and investigate before repeating uploads.
+There should be **no** `loading ... firmware bytes` or `Q,...` lines at startup. Captured values may reflect residual sensor error state from the previous run. Power off before rewiring; do not infer that working I2C proves the connector voltage is safe.
 
 ## Limits
 
