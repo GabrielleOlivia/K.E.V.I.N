@@ -64,9 +64,13 @@ try {
     $oldImage = Join-Path $firmware 'Bosch_Shuttle3_BHI360_bsxsam.fw.h'
     if (Test-Path $oldImage) { Remove-Item $oldImage -Force }
     Copy-Item (Join-Path $tempDir 'firmware\bhi360\Bosch_Shuttle3_BHI360_bsxsam_lite.fw.h') $firmware -Force
+    # Retain Bosch's exact .fw binary for offline host-side integrity comparison.
+    # It is NOT compiled into the SAMD21 firmware (only the .fw.h header is).
+    Copy-Item (Join-Path $tempDir 'firmware\bhi360\Bosch_Shuttle3_BHI360_bsxsam_lite.fw') $firmware -Force
     Copy-Item (Join-Path $tempDir 'LICENSE') (Join-Path $project 'lib\BoschBHI360\LICENSE') -Force
 
-    Write-Host 'Bosch core SDK and firmware installed. COINES-only parser excluded; C++ compatibility adjusted.' -ForegroundColor Green
+    Write-Host 'Bosch core SDK, .fw binary, and header installed. COINES-only parser excluded; C++ compatibility adjusted.' -ForegroundColor Green
+    Write-Host 'Next: py -3 .\scripts\audit-firmware.py (does not write to any sensor).' -ForegroundColor Cyan
     Write-Host 'Run PlatformIO: Build. Do NOT upload until build and memory usage are checked.'
 }
 finally {
