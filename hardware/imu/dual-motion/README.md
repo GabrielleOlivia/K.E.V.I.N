@@ -1,6 +1,6 @@
-# K.E.V.I.N. — Dual BHI360 motion-stream prototype (v0.4: single-IMU lite test)
+# K.E.V.I.N. — Dual BHI360 motion-stream prototype (v0.5: paced-transfer diagnostics)
 
-**Status:** Earlier v0.2 compiled and flashed successfully on SAMD21, but neither BHI360 booted motion firmware. v0.3 preflight **built, flashed, and passed on both IMUs**. v0.4 changes are **not yet built or hardware-tested**. On 2026-11-16: chest firmware upload had error value `0x11` (bad header CRC); head firmware verification succeeded (`0x38`) but boot produced `0x1B` (fatal firmware error). No motion/quaternion data obtained. Preserve the proven `hardware/imu/diagnostics` project. For infant *manikin simulation only*, not clinical or patient monitoring.
+**Status:** Earlier v0.2 compiled and flashed successfully on SAMD21, but neither BHI360 booted motion firmware. v0.3 preflight **built, flashed, and passed on both IMUs**. v0.4 was built and flashed; the CHEST attempt failed with Wire status 3 (data NACK) on register 0x00, 28 bytes, Bosch error `0x44` (unhandled interrupt / exception; postmortem potentially available). v0.5 has **not yet been compiled or hardware-tested**. On 2026-11-16: chest firmware upload had error value `0x11` (bad header CRC); head firmware verification succeeded (`0x38`) but boot produced `0x1B` (fatal firmware error). No motion/quaternion data obtained. Preserve the proven `hardware/imu/diagnostics` project. For infant *manikin simulation only*, not clinical or patient monitoring.
 
 ## Hardware confirmed by diagnostic output (2026-11-16)
 
@@ -15,7 +15,7 @@ Both devices were read twice successfully. This does not prove firmware/sensor f
 
 On power-up the program performs **read-only preflight** for both modules, displaying FUSER2 ID, chip ID, revision, ROM version, boot status, error code and error auxiliary register. It **does not automatically reset or upload firmware**. This prevents inadvertently repeating failed firmware operations on each USB reconnection or MCU reset.
 
-**Stop after preflight and review the results. For the next controlled test, use `c` only after confirming v0.4 is running.** The former `u` command that affected both sensors is disabled.
+**Stop after preflight and review the results. For the next controlled test, use `c` only after confirming v0.5 is running and a full power cycle has returned the error register to 0.** The former `u` command that affected both sensors is disabled.
 
 Serial commands:
 - `p`: repeat read-only preflight
@@ -56,10 +56,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\setup-bosch.ps1
 
 If the port number changes, substitute the detected port.
 
-Expected *illustrative only* v0.4 read-only preflight beginning:
+Expected *illustrative only* v0.5 read-only preflight beginning:
 
 ```text
-# KEVIN Dual BHI360 GameRV v0.4 SINGLE-IMU LITE TEST
+# KEVIN Dual BHI360 GameRV v0.5 PACED-TRANSFER DIAGNOSTIC
 # Sensor A1=CHEST, Sensor B1=HEAD, both at I2C 0x29
 # CHEST PREFLIGHT_BEGIN (reads only)
 # CHEST fuser2_id=0x89
@@ -69,7 +69,7 @@ Expected *illustrative only* v0.4 read-only preflight beginning:
 # At startup no firmware is uploaded. Review log before typing c or b.
 ```
 
-There should be **no** `loading ... firmware bytes` or `Q,...` lines at startup. After typing `c`, inspect the full CHEST status lines and stop before testing the HEAD (`b`). Captured values may reflect residual sensor error state from the previous run. Power off before rewiring; do not infer that working I2C proves the connector voltage is safe.
+There should be **no** `loading ... firmware bytes` or `Q,...` lines at startup. After typing `c`, inspect the full CHEST status lines and stop before testing the HEAD (`b`). v0.5 inserts a 1 ms pause after successful 28-byte command-channel writes and reports count of acknowledged writes, channel bytes, failed write number and elapsed time, along with debug state/value registers. These are diagnostic experiments; they **do not establish the cause or guarantee a fix**. Error 0x44 is not the same as error 0x76 (upload overflow). Captured values may reflect residual sensor error state from the previous run. Power off before rewiring; do not infer that working I2C proves the connector voltage is safe.
 
 ## Limits
 
