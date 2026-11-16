@@ -104,9 +104,9 @@ def main() -> int:
         return fail("Invalid BHI360 image magic")
 
     # An observation, not a documented parser for Bosch's binary header.
-    observed_rom_bytes = int.from_bytes(binary_bytes[0x60:0x62], "little")
+    observed_rom_bytes = int.from_bytes(binary_bytes[0x64:0x66], "little")
     print(
-        f"Image bytes at offsets 0x60..0x61: 0x{observed_rom_bytes:04X}; "
+        f"Image bytes at offsets 0x64..0x65: 0x{observed_rom_bytes:04X}; "
         f"device ROM reported 0x{BOOTLOADER_ROM_SEEN_ON_HARDWARE:04X} "
         "(not independently verified as a version field)"
     )
