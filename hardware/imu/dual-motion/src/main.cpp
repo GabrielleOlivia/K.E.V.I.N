@@ -185,6 +185,91 @@ void printDiagnostics(Imu& imu, const char* phase) {
   Serial.println();
 }
 
+// Read-only preflight. Does not soft-reset, upload, boot, or configure fusion.
+void preflight(Imu& imu) {
+  Serial.print("# "); Serial.print(imu.label);
+  Serial.println(" PREFLIGHT_BEGIN (reads only)");
+
+  uint8_t fuserId = 0;
+  if (!readChipId(*imu.wire, fuserId)) {
+    Serial.print("# "); Serial.print(imu.label);
+    Serial.println(" FUSER2_ID_READ_FAILED");
+    return;
+  }
+  Serial.print("# "); Serial.print(imu.label);
+  Serial.print(" fuser2_id=0x"); Serial.println(fuserId, HEX);
+  if (fuserId != FUSER2_ID_EXPECTED) {
+    Serial.print("# "); Serial.print(imu.label);
+    Serial.println(" WRONG_FUSER2_ID; no initialization allowed");
+    return;
+  }
+  const int8_t api = bhi360_init(BHI360_I2C_INTERFACE, boschRead, boschWrite,
+                                 boschDelay, 28, &imu, &imu.dev);
+  Serial.print("# "); Serial.print(imu.label);
+  Serial.print(" api_bind_result="); Serial.println(static_cast<int>(api));
+  if (api != BHI360_OK) return;
+
+  uint8_t chip = 0;
+  int8_t status = bhi360_get_chip_id(&chip, &imu.dev);
+  Serial.print("# "); Serial.print(imu.label);
+  Serial.print(" chip_id_result="); Serial.print(static_cast<int>(status));
+  if (status == BHI360_OK) {
+    Serial.print(" chip_id=0x"); Serial.print(chip, HEX);
+    Serial.print(" expected=0x"); Serial.print(BHI360_CHIP_ID, HEX);
+    Serial.print(" match="); Serial.print(chip == BHI360_CHIP_ID ? "yes" : "no");
+  }
+  Serial.println();
+
+  uint8_t revision = 0;
+  status = bhi360_get_revision_id(&revision, &imu.dev);
+  Serial.print("# "); Serial.print(imu.label);
+  Serial.print(" revision_result="); Serial.print(static_cast<int>(status));
+  if (status == BHI360_OK) {
+    Serial.print(" rev=0x"); Serial.print(revision, HEX);
+  }
+  Serial.println();
+
+  uint16_t rom = 0;
+  status = bhi360_get_rom_version(&rom, &imu.dev);
+  Serial.print("# "); Serial.print(imu.label);
+  Serial.print(" rom_version_result="); Serial.print(static_cast<int>(status));
+  if (status == BHI360_OK) {
+    Serial.print(" rom="); Serial.print(rom);
+    Serial.print(" (0x"); Serial.print(rom, HEX); Serial.print(")");
+  }
+  Serial.println();
+
+  uint8_t boot = 0;
+  status = bhi360_get_boot_status(&boot, &imu.dev);
+  Serial.print("# "); Serial.print(imu.label);
+  Serial.print(" boot_status_result="); Serial.print(static_cast<int>(status));
+  if (status == BHI360_OK) {
+    Serial.print(" boot=0x"); Serial.print(boot, HEX);
+  }
+  Serial.println();
+
+  uint8_t errorValue = 0;
+  status = bhi360_get_error_value(&errorValue, &imu.dev);
+  Serial.print("# "); Serial.print(imu.label);
+  Serial.print(" error_value_result="); Serial.print(static_cast<int>(status));
+  if (status == BHI360_OK) {
+    Serial.print(" error=0x"); Serial.print(errorValue, HEX);
+  }
+  Serial.println();
+
+  uint8_t aux = 0;
+  status = bhi360_get_regs(BHI360_REG_ERROR_AUX, &aux, 1, &imu.dev);
+  Serial.print("# "); Serial.print(imu.label);
+  Serial.print(" error_aux_result="); Serial.print(static_cast<int>(status));
+  if (status == BHI360_OK) {
+    Serial.print(" error_aux=0x"); Serial.print(aux, HEX);
+  }
+  Serial.println();
+
+  Serial.print("# "); Serial.print(imu.label);
+  Serial.println(" PREFLIGHT_END");
+}
+
 bool initImu(Imu& imu) {
   uint8_t id = 0;
   if (!readChipId(*imu.wire, id) || id != FUSER2_ID_EXPECTED) {
@@ -278,7 +363,7 @@ void setup() {
   Serial.begin(115200);
   const uint32_t start = millis();
   while (!Serial && millis() - start < 3500) delay(10);
-  Serial.println("# KEVIN Dual BHI360 GameRV v0.2 DIAGNOSTIC");
+  Serial.println("# KEVIN Dual BHI360 GameRV v0.3 PREFLIGHT");
   Serial.println("# Sensor A1=CHEST, Sensor B1=HEAD, both at I2C 0x29");
   if (!pinsMatch(SDA_A, PORTA, 16) || !pinsMatch(SCL_A, PORTA, 17) ||
       !pinsMatch(SDA_B, PORTA, 12) || !pinsMatch(SCL_B, PORTA, 13)) {
@@ -292,16 +377,40 @@ void setup() {
   pinPeripheral(SDA_B, PIO_SERCOM); pinPeripheral(SCL_B, PIO_SERCOM);
   busB.setClock(100000);
 
-  const bool chestReady = initImu(chest);
-  const bool headReady = initImu(head);
-  if (!chestReady || !headReady) {
-    Serial.println("# INIT_INCOMPLETE: check errors above; returning to identification firmware may be necessary");
-  }
-  Serial.println("# CSV: Q,LOCATION,host_ms,qx,qy,qz,qw,accuracy_rad,age_ms");
+  // Previous trial had fatal sensor errors (0x11 / 0x1B).
+  // Never issue firmware commands automatically when MCU is power-cycled or reset.
+  preflight(chest);
+  preflight(head);
+  Serial.println("# Commands: p=repeat read-only preflight; u=ONE manual firmware upload attempt; h=help");
+  Serial.println("# STOP after preflight and share the log. Do NOT send u until the log is reviewed.");
 }
 
 void loop() {
   static uint32_t lastPoll = 0, lastPrint = 0;
+  static bool attempted = false;
+  while (Serial.available()) {
+    const char c = static_cast<char>(Serial.read());
+    if (c == 'p' || c == 'P') {
+      preflight(chest);
+      preflight(head);
+    } else if (c == 'h' || c == 'H') {
+      Serial.println("# p=preflight reads; u=manual boot attempt once; h=help");
+    } else if (c == 'u' || c == 'U') {
+      if (attempted) {
+        Serial.println("# Upload already attempted this MCU session; reset MCU to rearm");
+      } else {
+        attempted = true;
+        Serial.println("# MANUAL_UPLOAD_REQUESTED: attempting each sensor once, no automatic retry");
+        const bool chestReady = initImu(chest);
+        const bool headReady = initImu(head);
+        Serial.print("# MANUAL_UPLOAD_COMPLETE chest=");
+        Serial.print(chestReady ? "ready" : "FAILED");
+        Serial.print(" head=");
+        Serial.println(headReady ? "ready" : "FAILED");
+        Serial.println("# CSV: Q,LOCATION,host_ms,qx,qy,qz,qw,accuracy_rad,age_ms");
+      }
+    }
+  }
   const uint32_t now = millis();
   if (static_cast<uint32_t>(now - lastPoll) >= SAMPLE_INTERVAL_MS) {
     lastPoll = now;
