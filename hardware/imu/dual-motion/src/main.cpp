@@ -27,7 +27,7 @@ constexpr uint8_t FUSER2_ID_EXPECTED = 0x89; // verified with existing probe
 constexpr uint32_t SAMPLE_INTERVAL_MS = 25; // poll each at ~40Hz, configured 25Hz
 constexpr uint32_t PRINT_INTERVAL_MS = 100; // print latest snapshots at up to 10Hz
 constexpr size_t FIFO_BUFFER_SIZE = 512;
-constexpr size_t POSTMORTEM_BUFFER_SIZE = 4096;
+constexpr size_t POSTMORTEM_BUFFER_SIZE = 6144; // Bosch crash response observed as 4300 bytes
 constexpr size_t POSTMORTEM_PRINT_LIMIT = 224;
 // Diagnostic experiment: allow the BHI360 command-channel consumer to
 // catch up between consecutive 28-byte chunks. 28 is word-aligned (4 bytes).
@@ -277,6 +277,11 @@ void requestPostmortem(Imu& imu, bool forceEvenIfErrorCleared) {
   Serial.print("# "); Serial.print(imu.label);
   Serial.print(" postmortem_result="); Serial.print(static_cast<int>(result));
   Serial.print(" postmortem_bytes="); Serial.println(actualLength);
+  if (result == BHI360_E_BUFFER) {
+    Serial.print("# "); Serial.print(imu.label);
+    Serial.print(" postmortem_needed_bytes="); Serial.print(actualLength);
+    Serial.print(" allocated_bytes="); Serial.println(sizeof(postmortemBuffer));
+  }
   if (result != BHI360_OK) {
     Serial.print("# "); Serial.print(imu.label);
     Serial.print(" postmortem_wire_stage="); Serial.print(imu.lastWireStage);
@@ -507,7 +512,7 @@ void setup() {
   Serial.begin(115200);
   const uint32_t start = millis();
   while (!Serial && millis() - start < 3500) delay(10);
-  Serial.println("# KEVIN Dual BHI360 GameRV v0.7 AUTO-CRASH-CAPTURE");
+  Serial.println("# KEVIN Dual BHI360 GameRV v0.8 LARGE-POSTMORTEM");
   Serial.println("# Sensor A1=CHEST, Sensor B1=HEAD, both at I2C 0x29");
   if (!pinsMatch(SDA_A, PORTA, 16) || !pinsMatch(SCL_A, PORTA, 17) ||
       !pinsMatch(SDA_B, PORTA, 12) || !pinsMatch(SCL_B, PORTA, 13)) {
