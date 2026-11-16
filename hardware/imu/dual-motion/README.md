@@ -1,6 +1,6 @@
-# K.E.V.I.N. — Dual BHI360 motion-stream prototype (read-only preflight v0.3)
+# K.E.V.I.N. — Dual BHI360 motion-stream prototype (v0.4: single-IMU lite test)
 
-**Status:** Earlier v0.2 compiled and flashed successfully on SAMD21, but neither BHI360 booted motion firmware. v0.3 changes are **not yet built or tested**. On 2026-11-16: chest firmware upload had error value `0x11` (bad header CRC); head firmware verification succeeded (`0x38`) but boot produced `0x1B` (fatal firmware error). No motion/quaternion data obtained. Preserve the proven `hardware/imu/diagnostics` project. For infant *manikin simulation only*, not clinical or patient monitoring.
+**Status:** Earlier v0.2 compiled and flashed successfully on SAMD21, but neither BHI360 booted motion firmware. v0.3 preflight **built, flashed, and passed on both IMUs**. v0.4 changes are **not yet built or hardware-tested**. On 2026-11-16: chest firmware upload had error value `0x11` (bad header CRC); head firmware verification succeeded (`0x38`) but boot produced `0x1B` (fatal firmware error). No motion/quaternion data obtained. Preserve the proven `hardware/imu/diagnostics` project. For infant *manikin simulation only*, not clinical or patient monitoring.
 
 ## Hardware confirmed by diagnostic output (2026-11-16)
 
@@ -15,18 +15,22 @@ Both devices were read twice successfully. This does not prove firmware/sensor f
 
 On power-up the program performs **read-only preflight** for both modules, displaying FUSER2 ID, chip ID, revision, ROM version, boot status, error code and error auxiliary register. It **does not automatically reset or upload firmware**. This prevents inadvertently repeating failed firmware operations on each USB reconnection or MCU reset.
 
-**Stop after the preflight output and inspect it first. Do not send `u` until the results have been reviewed.**
+**Stop after preflight and review the results. For the next controlled test, use `c` only after confirming v0.4 is running.** The former `u` command that affected both sensors is disabled.
 
 Serial commands:
 - `p`: repeat read-only preflight
 - `h`: show help
-- `u`: explicitly attempt firmware upload and boot on both IMUs **once per MCU session**. This remains experimental and may produce errors. **Do not use for the next test until instructed.**
+- `c`: **one** firmware-upload/boot attempt on the CHEST IMU alone. HEAD is left untouched.
+- `b`: **one** firmware-upload/boot attempt on the HEAD IMU alone. CHEST is left untouched.
+- `u`: disabled.
+
+For each IMU, attempts are limited to once per SAMD21 session. **Avoid automatic repeats**; inspect all diagnostic output, then power-cycle before any later attempt. Motion measurement remains unverified.
 
 ## What the eventual motion prototype attempts
 
 1. Verify each BHI360 FUSER2 identifier before configuration writes.
 2. Initialize two independent Bosch API instances on the separate I2C buses.
-3. Load the same official Bosch bsxsam 6-axis fusion image to each IMU's RAM (once per sensor power cycle). Include the image only once in SAMD21 flash.
+3. Load the official Bosch **bsxsam_lite** 6-axis firmware image to a **single selected** IMU on an explicit serial command. Include the image only once in SAMD21 flash.
 4. Enable Game Rotation Vector at 25 Hz on both.
 5. Read each sensor FIFO and stream measured quaternions over USB serial (115200 baud).
 
@@ -52,25 +56,25 @@ powershell -ExecutionPolicy Bypass -File .\scripts\setup-bosch.ps1
 
 If the port number changes, substitute the detected port.
 
-Expected *illustrative only* read-only preflight beginning:
+Expected *illustrative only* v0.4 read-only preflight beginning:
 
 ```text
-# KEVIN Dual BHI360 GameRV v0.3 PREFLIGHT
+# KEVIN Dual BHI360 GameRV v0.4 SINGLE-IMU LITE TEST
 # Sensor A1=CHEST, Sensor B1=HEAD, both at I2C 0x29
 # CHEST PREFLIGHT_BEGIN (reads only)
 # CHEST fuser2_id=0x89
 ...
 # HEAD PREFLIGHT_BEGIN (reads only)
 ...
-# STOP after preflight and share the log. Do NOT send u until the log is reviewed.
+# At startup no firmware is uploaded. Review log before typing c or b.
 ```
 
-There should be **no** `loading ... firmware bytes` or `Q,...` lines at startup. Captured values may reflect residual sensor error state from the previous run. Power off before rewiring; do not infer that working I2C proves the connector voltage is safe.
+There should be **no** `loading ... firmware bytes` or `Q,...` lines at startup. After typing `c`, inspect the full CHEST status lines and stop before testing the HEAD (`b`). Captured values may reflect residual sensor error state from the previous run. Power off before rewiring; do not infer that working I2C proves the connector voltage is safe.
 
 ## Limits
 
 - Copies successful SAMD21 wiring from identification probe.
-- Uses Bosch SensorAPI v2.3.1 and I2C transactions of at most 28 data bytes.
+- Uses Bosch SensorAPI v2.3.1 with the official `Bosch_Shuttle3_BHI360_bsxsam_lite.fw.h` firmware image and I2C transactions of at most 28 data bytes. Testing a smaller image isolates one possible factor but does not establish hardware compatibility.
 - No BMM350, pressure driver, angle calculation, or Raspberry Pi host code yet.
 - Sensor readings aren't hardware-synchronized; serial frames include host `millis()` and `age_ms`.
 - Firmware never erases nonvolatile storage in the BHI360; uploads to RAM, but replaces the program flashed on the SAMD21.
