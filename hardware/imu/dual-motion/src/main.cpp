@@ -290,15 +290,36 @@ void requestPostmortem(Imu& imu, bool forceEvenIfErrorCleared) {
     Serial.println("# POSTMORTEM_END (request failed)");
     return;
   }
-  // Bosch datasheet Crash Dump response (Table 34):
-  // the API strips the 4-byte status packet header.
-  // 0x84: validity, 0x85: flags, 0xAF: exception reason.
-  if (actualLength > 0xAB) {
+  // Bosch BHI360 datasheet Table 34 crash-dump payload offsets.
+  // IMPORTANT: bhi360_get_post_mortem_data() returns the payload already
+  // positioned at the documented field offsets; do NOT subtract four.
+  // Verified against a real 4300-byte crash report: valid=1, flags=0x06,
+  // debug_state=0x0B, reset_reason=0x04, error_report=0x44.
+  if (actualLength > 0xAF) {
+    const uint16_t stackSize = static_cast<uint16_t>(postmortemBuffer[0x86]) |
+                               (static_cast<uint16_t>(postmortemBuffer[0x87]) << 8);
+    const uint32_t diagnostic =
+        static_cast<uint32_t>(postmortemBuffer[0xA0]) |
+        (static_cast<uint32_t>(postmortemBuffer[0xA1]) << 8) |
+        (static_cast<uint32_t>(postmortemBuffer[0xA2]) << 16) |
+        (static_cast<uint32_t>(postmortemBuffer[0xA3]) << 24);
+    const uint32_t exceptionCause =
+        static_cast<uint32_t>(postmortemBuffer[0x98]) |
+        (static_cast<uint32_t>(postmortemBuffer[0x99]) << 8) |
+        (static_cast<uint32_t>(postmortemBuffer[0x9A]) << 16) |
+        (static_cast<uint32_t>(postmortemBuffer[0x9B]) << 24);
+
     Serial.print("# "); Serial.print(imu.label);
-    Serial.print(" crash_valid="); Serial.print(postmortemBuffer[0x84 - 4]);
-    Serial.print(" crash_flags=0x"); Serial.print(postmortemBuffer[0x85 - 4], HEX);
-    Serial.print(" reset_reason=0x"); Serial.print(postmortemBuffer[0xAD - 4], HEX);
-    Serial.print(" exception_reason=0x"); Serial.println(postmortemBuffer[0xAF - 4], HEX);
+    Serial.print(" crash_valid="); Serial.print(postmortemBuffer[0x84]);
+    Serial.print(" crash_flags=0x"); Serial.print(postmortemBuffer[0x85], HEX);
+    Serial.print(" stack_size="); Serial.println(stackSize);
+    Serial.print("# "); Serial.print(imu.label);
+    Serial.print(" crash_diagnostic=0x"); Serial.print(diagnostic, HEX);
+    Serial.print(" ecr=0x"); Serial.println(exceptionCause, HEX);
+    Serial.print("# "); Serial.print(imu.label);
+    Serial.print(" crash_debug_state=0x"); Serial.print(postmortemBuffer[0xA9], HEX);
+    Serial.print(" reset_reason=0x"); Serial.print(postmortemBuffer[0xAD], HEX);
+    Serial.print(" error_report=0x"); Serial.println(postmortemBuffer[0xAF], HEX);
   }
   const uint32_t shown = actualLength > POSTMORTEM_PRINT_LIMIT ?
       POSTMORTEM_PRINT_LIMIT : actualLength;
@@ -512,7 +533,7 @@ void setup() {
   Serial.begin(115200);
   const uint32_t start = millis();
   while (!Serial && millis() - start < 3500) delay(10);
-  Serial.println("# KEVIN Dual BHI360 GameRV v0.8 LARGE-POSTMORTEM");
+  Serial.println("# KEVIN Dual BHI360 GameRV v0.9 CRASH-DECODE-FIX");
   Serial.println("# Sensor A1=CHEST, Sensor B1=HEAD, both at I2C 0x29");
   if (!pinsMatch(SDA_A, PORTA, 16) || !pinsMatch(SCL_A, PORTA, 17) ||
       !pinsMatch(SDA_B, PORTA, 12) || !pinsMatch(SCL_B, PORTA, 13)) {
