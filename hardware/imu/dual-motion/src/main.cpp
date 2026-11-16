@@ -14,7 +14,7 @@ extern "C" {
 #include "bhi360_virtual_sensor_conf_param.h"
 #include "bhi360_event_data.h"
 }
-#include "bhi360/Bosch_Shuttle3_BHI360_bsxsam.fw.h"
+#include "bhi360/Bosch_Shuttle3_BHI360_bsxsam_lite.fw.h"
 
 namespace {
 constexpr uint8_t SDA_A = 11;  // PA16 (existing successful diagnostic)
@@ -363,7 +363,7 @@ void setup() {
   Serial.begin(115200);
   const uint32_t start = millis();
   while (!Serial && millis() - start < 3500) delay(10);
-  Serial.println("# KEVIN Dual BHI360 GameRV v0.3 PREFLIGHT");
+  Serial.println("# KEVIN Dual BHI360 GameRV v0.4 SINGLE-IMU LITE TEST");
   Serial.println("# Sensor A1=CHEST, Sensor B1=HEAD, both at I2C 0x29");
   if (!pinsMatch(SDA_A, PORTA, 16) || !pinsMatch(SCL_A, PORTA, 17) ||
       !pinsMatch(SDA_B, PORTA, 12) || !pinsMatch(SCL_B, PORTA, 13)) {
@@ -381,34 +381,45 @@ void setup() {
   // Never issue firmware commands automatically when MCU is power-cycled or reset.
   preflight(chest);
   preflight(head);
-  Serial.println("# Commands: p=repeat read-only preflight; u=ONE manual firmware upload attempt; h=help");
-  Serial.println("# STOP after preflight and share the log. Do NOT send u until the log is reviewed.");
+  Serial.println("# Commands: p=read-only preflight; c=test CHEST once; b=test HEAD once; h=help");
+  Serial.println("# At startup no firmware is uploaded. Review log before typing c or b.");
 }
 
 void loop() {
   static uint32_t lastPoll = 0, lastPrint = 0;
-  static bool attempted = false;
+  static bool attemptedChest = false;
+  static bool attemptedHead = false;
   while (Serial.available()) {
     const char c = static_cast<char>(Serial.read());
     if (c == 'p' || c == 'P') {
       preflight(chest);
       preflight(head);
     } else if (c == 'h' || c == 'H') {
-      Serial.println("# p=preflight reads; u=manual boot attempt once; h=help");
-    } else if (c == 'u' || c == 'U') {
-      if (attempted) {
-        Serial.println("# Upload already attempted this MCU session; reset MCU to rearm");
+      Serial.println("# p=preflight reads; c=one CHEST upload/boot; b=one HEAD upload/boot; h=help");
+    } else if (c == 'c' || c == 'C') {
+      if (attemptedChest) {
+        Serial.println("# CHEST upload already attempted this MCU session. Power-cycle before repeating.");
       } else {
-        attempted = true;
-        Serial.println("# MANUAL_UPLOAD_REQUESTED: attempting each sensor once, no automatic retry");
-        const bool chestReady = initImu(chest);
-        const bool headReady = initImu(head);
-        Serial.print("# MANUAL_UPLOAD_COMPLETE chest=");
-        Serial.print(chestReady ? "ready" : "FAILED");
-        Serial.print(" head=");
-        Serial.println(headReady ? "ready" : "FAILED");
-        Serial.println("# CSV: Q,LOCATION,host_ms,qx,qy,qz,qw,accuracy_rad,age_ms");
+        attemptedChest = true;
+        Serial.println("# MANUAL_LITE_CHEST_BEGIN (HEAD is left untouched)");
+        const bool ready = initImu(chest);
+        Serial.print("# MANUAL_LITE_CHEST_END ready=");
+        Serial.println(ready ? "1" : "0");
+        if (ready) Serial.println("# CSV: Q,LOCATION,host_ms,qx,qy,qz,qw,accuracy_rad,age_ms");
       }
+    } else if (c == 'b' || c == 'B') {
+      if (attemptedHead) {
+        Serial.println("# HEAD upload already attempted this MCU session. Power-cycle before repeating.");
+      } else {
+        attemptedHead = true;
+        Serial.println("# MANUAL_LITE_HEAD_BEGIN (CHEST is left untouched)");
+        const bool ready = initImu(head);
+        Serial.print("# MANUAL_LITE_HEAD_END ready=");
+        Serial.println(ready ? "1" : "0");
+        if (ready) Serial.println("# CSV: Q,LOCATION,host_ms,qx,qy,qz,qw,accuracy_rad,age_ms");
+      }
+    } else if (c == 'u' || c == 'U') {
+      Serial.println("# command u disabled; use c or b for one sensor at a time.");
     }
   }
   const uint32_t now = millis();
