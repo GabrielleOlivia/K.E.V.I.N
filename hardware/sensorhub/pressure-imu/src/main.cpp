@@ -44,6 +44,9 @@ struct ImuStatus {
 ImuStatus chestImu = {};
 ImuStatus headImu = {};
 uint32_t lastImuProbeMs = 0;
+// Latched only at boot: never connect/disconnect hardware while powered.
+// A missing pressure module is allowed; two IMUs can still be identified.
+bool pressurePresentAtBoot = false;
 
 // Track WHY an ADC sample fails; do not confuse a missing MCP3426
 // (address NACK) with an ADC that responds with RDY=1 or a wrong config.
@@ -88,7 +91,7 @@ void printPressureFaultDetails()
     Serial.println(lastPressureAdcConfig, HEX);
 }
 
-void printAddressAck(TwoWire &bus, const char *busName, uint8_t addr, const char *device)
+bool printAddressAck(TwoWire &bus, const char *busName, uint8_t addr, const char *device)
 {
     bus.beginTransmission(addr);
     const uint8_t result = bus.endTransmission(true);
@@ -102,15 +105,19 @@ void printAddressAck(TwoWire &bus, const char *busName, uint8_t addr, const char
     Serial.print(result);
     Serial.print(" ack=");
     Serial.println(result == 0 ? 1 : 0);
+    return result == 0;
 }
 
-void checkBusAddresses()
+// Returns pressure address ACK. A subsequent 's' prints live addresses but
+// does not change pressurePresentAtBoot: cable changes require power-off/reboot.
+bool checkBusAddresses()
 {
     Serial.println("# BUS_CHECK_BEGIN (address ACK only; no firmware writes)");
-    printAddressAck(WireSensorA, "A", MCP3426_ADDR, "PRESSURE_ADC");
+    const bool pressureAck = printAddressAck(WireSensorA, "A", MCP3426_ADDR, "PRESSURE_ADC");
     printAddressAck(WireSensorA, "A", BHI360_ADDR, "CHEST_IMU");
     printAddressAck(WireSensorB, "B", BHI360_ADDR, "HEAD_IMU");
     Serial.println("# BUS_CHECK_END");
+    return pressureAck;
 }
 
 bool pinsMatch(uint8_t index, uint32_t port, uint32_t pin)
@@ -259,6 +266,7 @@ bool readPressureADC(int16_t &rawValue)
 
 const char *stateName()
 {
+    if (!pressurePresentAtBoot) return "PRESSURE_ABSENT";
     if (!baselineValid)
     {
         return "CAL_REQUIRED";
@@ -346,6 +354,11 @@ void invalidateBaseline()
 
 bool calibrateBaseline()
 {
+    if (!pressurePresentAtBoot)
+    {
+        Serial.println("# CALIBRATION_SKIPPED: pressure module not detected at boot (0x68). Connect only with power OFF, then restart.");
+        return false;
+    }
     // Do NOT throw away a known-good baseline just because a new calibration
     // attempt has a missed ADC sample. Only replace the baseline after a
     // complete, stable calibration succeeds.
@@ -513,7 +526,7 @@ void setup()
     {
     }
 
-    Serial.println("# KEVIN PRESSURE + DUAL IMU v0.2 BUS-A DIAGNOSTIC (no firmware writes)");
+    Serial.println("# KEVIN PRESSURE + DUAL IMU v0.3 OPTIONAL-PRESSURE (no BHI firmware writes)");
     Serial.println("# Pressure sensor: MCP3426 @0x68, A2; CHEST @0x29, A1; HEAD @0x29, B1");
     Serial.println("# Candidate pressure events only, not infant ventilation or calibrated pressure");
     Serial.println("t_ms,raw,baseline,delta,state,candidate_count,sample_ok,baseline_ok");
@@ -539,7 +552,10 @@ void setup()
     WireSensorB.setClock(100000);
 
     delay(200);
-    checkBusAddresses();
+    pressurePresentAtBoot = checkBusAddresses();
+    Serial.print("# PRESSURE_MODE ");
+    Serial.println(pressurePresentAtBoot ? "ADC_DETECTED (calibration still required)" :
+                    "ADC_NOT_DETECTED (IMU_ONLY; pressure samples suppressed)");
     probeBothImus();
     Serial.println("# Commands: s=I2C ACK check; p=read-only IMU probe; z=pressure calibration; h=help");
 
@@ -576,6 +592,21 @@ void loop()
     if (recalibrate)
     {
         calibrateBaseline();
+        return;
+    }
+
+    if (!pressurePresentAtBoot)
+    {
+        // Keep both IMUs alive without issuing pointless MCP3426 writes.
+        // Empty pressure values are unavailable, never an invented zero.
+        static uint32_t lastAbsentSampleMs = 0;
+        const uint32_t t = millis();
+        if (static_cast<uint32_t>(t - lastAbsentSampleMs) >= 1000)
+        {
+            printSample(t, false, 0, "PRESSURE_ABSENT");
+            lastAbsentSampleMs = t;
+        }
+        delay(15);
         return;
     }
 
