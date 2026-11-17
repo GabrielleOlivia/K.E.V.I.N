@@ -91,3 +91,18 @@ The reviewed inputs were B2 `becb92f`, B1 `3f2e8e7`, A-side ToF `0f58395` and pr
 The normal image uses separate TwoWire objects, function-C pinmux after begin(), matching SERCOM1/2 handlers and 100 kHz. A pressure one-shot writes 0x88, polls the same conversion after 110 ms with a 200 ms busy cutoff, checks the three returned bytes and expects ready config 0x08. It emits signed counts at a nominal 4 Hz. ToF uses default 7-bit 0x29 and checks register 0x0000 before initialization. It checks the interrupt-clear write before publishing a frame and discards nonzero error codes and the 0xFF sentinel. Each ToF wait can take 100 ms plus Wire time. Both buses share CPU time, ground and power. Save the bench log and record valid/invalid totals per sensor alongside firmware SHA, adapter orientation, module revisions and local rail measurements.
 
 [Microchip MCP3426/7/8 data sheet, §§ 4–5](https://ww1.microchip.com/downloads/aemDocuments/documents/OTH/ProductDocuments/DataSheets/22226a.pdf) · [Microchip SAM D21 multiplexed signals](https://onlinedocs.microchip.com/oxy/GUID-22527069-B4D6-49B9-BACC-3AF1C52EB48C-en-US-21/GUID-DEBE7851-16DD-4D3B-8C60-F2627E3B3DEE.html) · [ST VL6180X data sheet](https://www.st.com/resource/en/datasheet/vl6180x.pdf) · [ST AN4545](https://www.st.com/resource/en/application_note/an4545-vl6180x-basic-ranging-application-note-stmicroelectronics.pdf) · [Adafruit variant at release 1.7.16](https://github.com/adafruit/ArduinoCore-samd/blob/1.7.16/variants/feather_m0_express/variant.cpp) · [NXP I²C specification](https://www.nxp.com/docs/en/user-guide/UM10204.pdf).
+
+## Live bench: A2 pressure-only scan — 2026-11-17
+
+User reported output from the **reviewed normal firmware** on SAMD21 COM3 after selecting A2 with pressure on A2 and B2 disabled:
+
+```text
+# STATUS pressure_A2_ack=0 tof_B2_ack=off tof_initialized=0 pressure_wire=2 tof_wire=-1
+# SCAN_START bus=A2
+# SCAN_END bus=A2 count=0
+# STATUS pressure_A2_ack=0 tof_B2_ack=off tof_initialized=0 pressure_wire=2 tof_wire=-1
+```
+
+**Observed:** A2 command path executed, but no device ACKed; `wire_status=2` is an address-phase failure. B2 being `off` is intentional, not evidence B2 failed. This is consistent with the prior v0.3 and combined-firmware pressure failures. DC 3.3 V on module VCC/SDA/SCL does not establish dynamic signal reachability.
+
+**Next discriminating control (safer than driving test pins first):** unpower everything, remove pressure A2, use the *previously working ToF with its verified four-wire connection on physical A2*, leave B2 empty, power USB, start monitor, send `a`, then `i`. Expect `# SCAN_FOUND bus=A2 address=0x29` if A2 bus and that cable are presently functional. **Do not send `g` while a ToF is plugged into A2 in the pressure-oriented review firmware**, because `g` is designed for MCP3426 acquisition on A2. Restoring pressure requires power off. If the 0x29 control passes, narrow pressure diagnosis to its cable/connector/ADC-side routing rather than declaring the SERCOM1 interface broken. If it fails, use the optional passive and low-only reachability diagnostics under the documented preconditions.
