@@ -1,5 +1,70 @@
 # K.E.V.I.N. — Combined STM32F405 Pressure + VL6180X ToF
 
+## LIVE BENCH RUNBOOK — STM32F405, pressure + ToF (2026-11-17)
+
+This **separate test branch** enables both sensors in `platformio.ini`:
+
+```ini
+-D KEVIN_TOF_IO_ENABLED=1
+-D KEVIN_PRESSURE_IO_ENABLED=1
+-D KEVIN_CARRIER_V103_PORT_B_VERIFIED=1
+-D KEVIN_PRESSURE_INTERFACE_VERIFIED=1
+```
+
+These last two flags record **the user's report** that the hardware connections were checked; the code cannot independently measure or certify power compatibility. This runbook applies **only if** they checked the actual v1.0.3 Port B **physical 5-pin mapping**, common ground, **MPXV5010GP transducer's specified 4.75–5.25V**, pressure module MCP3426 supply, and **I2C SDA/SCL logic voltages compatible with STM32 3.3V pins**. If any voltage was *not* checked, do **not** power the pressure module until measured/confirmed. Do not infer safety from matching jumper colors.
+
+- **ToF** remains on the *physically proven* Port A upper (PB7/PB6, PC9 rail switch), 0x29.
+- **Pressure** is mapped to Port B (PB11/PB10, PC8 3.3V logic rail switch), MCP3426 0x68. Physical pin assignment and 5V transducer feed depend on the verified user's connection.
+
+### Build and upload
+
+```powershell
+cd "$env:USERPROFILE\Documents\K.E.V.I.N"
+git status --short
+git fetch origin
+git switch --track origin/feature/stm32f405-pressure-tof-live-bench
+cd .\hardware\sensorhub\stm32f405-pressure-tof
+& "$env:USERPROFILE\.platformio\penv\Scripts\platformio.exe" run
+```
+
+If local branch already exists, use `git switch feature/stm32f405-pressure-tof-live-bench` followed by `git pull --ff-only`. Check that the build ends `[SUCCESS]`. No code was compiled in the GitHub connector.
+
+Confirm original backup remains outside Git in two matching files, 1,048,576 bytes, SHA-256 `6B82744EEB03B948B784AC3F73664F6AB2F2FCC75F9837E5994AD0DEA32B2FCF`. The backup was read and hashed, **not restore-tested**.
+
+**Only with power/signal checks complete and wiring stable:** close Serial Monitor; connect USB, hold BOOT and tap RST, release BOOT, connect USB in STM32CubeProgrammer. Select:
+
+```text
+C:\Users\olivi\Documents\K.E.V.I.N\hardware\sensorhub\stm32f405-pressure-tof\.pio\build\micromod_f405_pressure_tof\firmware.bin
+```
+
+Program with address `0x08000000` and verification enabled. No full-chip erase, option-byte changes or unnecessary mass erase. After programming, reset without BOOT, check `pio device list`, open monitor at 115200 baud, e.g.:
+
+```powershell
+& "$env:USERPROFILE\.platformio\penv\Scripts\platformio.exe" device monitor -p COM9 -b 115200 -f send_on_enter
+```
+
+Serial port COM9 may change after reset.
+
+### Pass/fail checkpoints
+
+1. With no pressure applied, type `s` and Enter to request:
+   `# STATUS pressure_ack=1 tof_ack=1`.
+   Presence proves only I2C acknowledgement, not valid sensing.
+2. Look for actual `# pressure,t_ms=...,raw_adc=...,valid=1` (approximately every 250 ms) and `# tof,t_ms=...,raw_mm=...,err=0,valid=1` with a flat matte target ~50mm from ToF. `err=6/7/11,valid=0` is invalid ranging, NOT a distance.
+3. With pressure at rest, type `z` Enter to zero-calibrate 30 ADC samples; look for `# CALIBRATION_OK baseline_adc=...`. Do not apply pressure during calibration.
+4. Then apply/release gentle syringe pressure; expect `delta_adc` changes, and (if threshold crossed) `# PRESSURE_POSITIVE_START` then `# PRESSURE_POSITIVE_END`. ToF samples must continue.
+5. If `pressure_ack=0`, check `# PRESSURE_ADC_ABSENT address 0x68 on I2C2`. Turn USB OFF before manipulating any wires, and retain the complete log. A startup NACK may recover automatically after about 2 sec. **No pressure zeros should be fabricated.**
+6. **Stop immediately** if the circuit becomes unusually hot, smells abnormal, USB disconnects repeatedly, or there are any signs of a short. Do not retry blindly.
+
+Raw ADC counts are **not calibrated pressure, airflow, air volume or breaths**. ToF `raw_mm` are raw range, not validated CPR compression depth. Both sensors passing means communications and bench response, not medical validity.
+
+### Next integration
+
+After simultaneous pressure+ToF data passes, add BHI360 head/chest sensors through an I2C address/port plan. At least three devices default to 0x29 (ToF, two BHI360s), so allocate addresses or bus isolation before connecting all simultaneously. BHI360 identification is not yet evidence that sensor firmware, fusion or neck-angle readings work.
+
+---
+
+
 **Status: combined firmware build succeeded on user's Windows toolchain; not flashed or hardware-tested as a combined program.** The existing original ToF-only firmware produced real valid ranging data on the physical STM32.
 
 This project combines the two separate sensor projects in one STM32 firmware image:
