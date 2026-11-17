@@ -1,6 +1,6 @@
 # K.E.V.I.N. — SAMD21 Pressure A2 + VL6180X ToF B1
 
-**Status: Firmware authored; combined two-sensor bench test not yet compiled or performed on physical hardware.**
+**Status: Firmware compiled and run on physical hardware on 2026-11-17. Initial combined bench test: both sensor addresses NACKed (not yet working).**
 
 ## Why this arrangement
 
@@ -11,7 +11,7 @@ Two working individual tests are now combined, but **on separate SAMD21 I2C buse
 | MCP3426 pressure ADC (SimModule Pressure v2) | **A2** | SERCOM1 / Sensor A | PA16 SDA (variant index 11), PA17 SCL (13) | **0x68** |
 | VL6180X ToF (red board) | **B1** | SERCOM2 / Sensor B | PA12 SDA (variant index 28), PA13 SCL (39) | **0x29** |
 
-Both SERCOM buses run at 100 kHz. Pressure ADC readings were previously physically tested on **A2** with the proper four-conductor cable; VL6180X identification and live raw distances were previously confirmed on **A1**, not yet B1. The wiring and supply on B1 must be verified prior to plugging in the ToF.
+Both SERCOM buses run at 100 kHz. Pressure ADC readings were previously physically tested on **A2** with the proper four-conductor cable; VL6180X identification and live raw distances were previously confirmed on **A2** (same Sensor A I2C bus), not yet B1. The wiring and supply on B1 must be verified prior to plugging in the ToF.
 
 The head BHI360 previously used B1 and has the same 0x29 address as the ToF. **Remove both IMUs** during this test. Do not test this firmware with the head IMU or any other unknown device at B1 0x29.
 
@@ -20,7 +20,7 @@ The head BHI360 previously used B1 and has the same 0x29 address as the ToF. **R
 1. Close all Serial Monitors and **unplug USB** from SAMD21.
 2. Keep the already verified **pressure MCP3426 module on A2**, using its proper intact four-contact connector (not individual jumper wires).
 3. Move **only the VL6180X ToF** to **B1**, using a connector verified to correctly map **GND, 3.3 V, SDA, and SCL**. Check orientation; a mechanical four-pin fit is not a pinout guarantee. If B1 supply and signal arrangement are uncertain, use a multimeter and an actual board drawing before connecting power.
-4. Leave A1 and IMUs disconnected. Reconnect USB only when electrical pin/voltage compatibility is confirmed.
+4. Leave the other A-side port and both IMUs disconnected. Reconnect USB only when electrical pin/voltage compatibility is confirmed.
 
 **Pressure caveat:** A live MCP3426 ADC reading does not prove that an MPXV5010GP pressure transducer has its specified supply (nominal 5 V). These ADC values are **uncalibrated**. Never inject 5 V onto SAMD21 3.3 V or SDA/SCL pins. Do not use this for infant/patient measurements.
 
@@ -41,7 +41,7 @@ After a successful build and safe physical hookup (and with Serial Monitor **clo
 & "$env:USERPROFILE\.platformio\penv\Scripts\platformio.exe" device monitor -p COM3 -b 115200 -f send_on_enter
 ```
 
-Use `platformio device list` if COM3 changed due to SAMD21 bootloader enumeration. Upload overwrites the flashed live A1 ToF firmware but both projects remain intact in source branches.
+Use `platformio device list` if COM3 changed due to SAMD21 bootloader enumeration. Upload overwrites the flashed live ToF firmware (which was tested on physical A2 despite an A1 banner) but both projects remain intact in source branches.
 
 ## Expected output (example format, not measured yet)
 
@@ -72,7 +72,13 @@ Missing pressure does **not** prevent ToF measurements. Failed ToF initializatio
 
 Previously verified:
 - SAMD21 A2 pressure raw ADC (when using original correct four-wire cable)
-- SAMD21 A1 VL6180X with model ID 0xB4 and live 9–192 mm valid raw samples
+- SAMD21 A2 VL6180X with model ID 0xB4 and live 9–192 mm valid raw samples
 - STM32 upper Port A VL6180X with live distance measurements
 
 **New two-sensor test on SAMD21 A2/B1: pending.** Next: compile, upload, record simultaneous raw streams, then run fixed-distance ToF stability and pressure response tests only after confirming transducer supply. This is a prototype simulator, not a medical device.
+
+## Actual initial combined test — 2026-11-17
+
+The user uploaded the combined firmware and observed repeated `# PRESSURE_ABSENT A2 0x68` and `# TOF_ABSENT B1 0x29` on COM3. Neither device acknowledged in this combination. After testing, the user clarified **the previously successful VL6180X identification and live-range experiments were physically connected to A2**, not A1 as earlier written. Both devices therefore have separate known-working *individual* A2 histories, while ToF on B1 is unverified.
+
+**Next controlled test:** USB power off, remove the ToF from B1, leave pressure on A2, USB power on; send `s` to check `pressure_A2_ack` independently. This isolates whether connecting the B1 device contributes to the pressure problem. Do not infer damage or insufficient voltage solely from NACKs.
