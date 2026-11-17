@@ -9,15 +9,21 @@
 #include <Wire.h>
 #include "vl6180x.h"
 
-#ifndef KEVIN_SENSOR_IO_ENABLED
-#define KEVIN_SENSOR_IO_ENABLED 0
+// The existing hardware/firmware has FUNCTIONALLY VERIFIED ToF on Port A upper.
+#ifndef KEVIN_TOF_IO_ENABLED
+#define KEVIN_TOF_IO_ENABLED 0
 #endif
-#if KEVIN_SENSOR_IO_ENABLED && (!defined(KEVIN_CARRIER_V103_PINMAP_VERIFIED) || !defined(KEVIN_SENSOR_SUPPLIES_VERIFIED))
-#error "Verify v1.0.3 connector pinout, switched rails and pressure/ToF voltage interfaces BEFORE enabling I2C."
+// Pressure Port B still needs electrical pin-by-pin verification.
+#ifndef KEVIN_PRESSURE_IO_ENABLED
+#define KEVIN_PRESSURE_IO_ENABLED 0
+#endif
+#if KEVIN_PRESSURE_IO_ENABLED && (!defined(KEVIN_CARRIER_V103_PORT_B_VERIFIED) || !defined(KEVIN_PRESSURE_INTERFACE_VERIFIED))
+#error "Verify v1.0.3 Port B pinout, 5V/3.3V lines and pressure module connector BEFORE enabling pressure I2C."
 #endif
 
 namespace {
-constexpr bool kEnabled = KEVIN_SENSOR_IO_ENABLED != 0;
+constexpr bool kTofEnabled = KEVIN_TOF_IO_ENABLED != 0;
+constexpr bool kPressureEnabled = KEVIN_PRESSURE_IO_ENABLED != 0;
 constexpr uint8_t kPressureAddr = 0x68;   // MCP3426
 constexpr uint8_t kAdcConfig = 0x88;      // CH1 one-shot, 16 bit, gain x1
 constexpr uint32_t kAdcWaitMs = 95;
@@ -50,14 +56,16 @@ bool ping(TwoWire &bus, uint8_t address) {
 }
 void status() {
   Serial.print("# STATUS pressure_ack=");
-  Serial.print(ping(pressureBus, kPressureAddr) ? 1 : 0);
+  if (kPressureEnabled) Serial.print(ping(pressureBus, kPressureAddr) ? 1 : 0);
+  else Serial.print("DISABLED");
   Serial.print(" tof_ack=");
-  Serial.println(ping(tofBus, vl6180x::ADDRESS) ? 1 : 0);
+  if (kTofEnabled) Serial.println(ping(tofBus, vl6180x::ADDRESS) ? 1 : 0);
+  else Serial.println("DISABLED");
   Serial.println("# I2C ACK does not prove valid measurement");
 }
 void startCalibration() {
-  if (!pressurePresent) {
-    Serial.println("# CALIBRATION_SKIPPED MCP3426 not present at startup");
+  if (!kPressureEnabled || !pressurePresent) {
+    Serial.println("# CALIBRATION_SKIPPED MCP3426 disabled or absent at startup");
     return;
   }
   calibrating = true;
@@ -242,33 +250,44 @@ void setup() {
   while (!Serial && millis() - started < 3000) delay(10);
   Serial.println("# KEVIN STM32 PRESSURE + TOF v0.1, diagnostic");
   Serial.println("# Photo carrier v1.0.3; reference schematic is v1.1.0b");
-  if (!kEnabled) {
-    Serial.println("# SAFETY_LOCK ENABLED: USB-only; no rail GPIO or I2C access");
+  if (!kTofEnabled && !kPressureEnabled) {
+    Serial.println("# SAFETY_LOCK ENABLED: USB-only; no sensor GPIO or I2C access");
     return;
   }
 
-  // DANGER if enabled without verification. Tentative v1.1.0b mapping.
-  digitalWrite(kPressureRail, LOW);
-  pinMode(kPressureRail, OUTPUT);
-  digitalWrite(kTofRail, LOW);
-  pinMode(kTofRail, OUTPUT);
-  digitalWrite(kPressureRail, HIGH);
-  digitalWrite(kTofRail, HIGH);
-  delay(50);
+  // Only the already bench-verified ToF port (A upper, PB7/PB6, PC9) is
+  // activated by default. No pressure pin or Port B power rail is touched.
+  if (kTofEnabled) {
+    digitalWrite(kTofRail, LOW);
+    pinMode(kTofRail, OUTPUT);
+    digitalWrite(kTofRail, HIGH);
+    delay(50);
+    tofBus.begin();
+    tofBus.setClock(100000);
+    identifyTof();
+  } else {
+    Serial.println("# TOF_IO_DISABLED");
+  }
 
-  pressureBus.begin();
-  pressureBus.setClock(100000);
-  tofBus.begin();
-  tofBus.setClock(100000);
-  pressurePresent = ping(pressureBus, kPressureAddr);
+  // Port B pressure I2C requires independent physical verification.
+  if (kPressureEnabled) {
+    digitalWrite(kPressureRail, LOW);
+    pinMode(kPressureRail, OUTPUT);
+    digitalWrite(kPressureRail, HIGH);
+    delay(50);
+    pressureBus.begin();
+    pressureBus.setClock(100000);
+    pressurePresent = ping(pressureBus, kPressureAddr);
+    Serial.println(pressurePresent ? "# PRESSURE_ADC_PRESENT send z for zero calibration" :
+                                     "# PRESSURE_ADC_ABSENT (no data will be reported)");
+  } else {
+    Serial.println("# PRESSURE_IO_DISABLED Port B untouched");
+  }
   status();
-  Serial.println(pressurePresent ? "# PRESSURE_ADC_PRESENT send z for zero calibration" :
-                                   "# PRESSURE_ADC_ABSENT (no data will be reported)");
-  identifyTof();
   Serial.println("# Commands: s=address ACKs; z=pressure zero calibration; h=help");
 }
 void loop() {
-  if (!kEnabled) {
+  if (!kTofEnabled && !kPressureEnabled) {
     static uint32_t heartbeatMs = 0;
     if (millis() - heartbeatMs >= 2000) {
       Serial.println("# SAFETY_LOCK_HEARTBEAT");
@@ -284,7 +303,7 @@ void loop() {
     if (c == 'h' || c == 'H')
       Serial.println("# Commands: s=address ACKs; z=calibrate pressure; h=help");
   }
-  servicePressure(millis());
-  serviceTof(millis()); // may block up to 100 ms
+  if (kPressureEnabled) servicePressure(millis());
+  if (kTofEnabled) serviceTof(millis()); // may block up to 100 ms
   delay(5);
 }
