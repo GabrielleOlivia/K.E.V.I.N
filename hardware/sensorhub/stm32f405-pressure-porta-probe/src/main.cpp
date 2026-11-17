@@ -13,6 +13,16 @@
 #include <Arduino.h>
 #include <Wire.h>
 
+#ifndef KEVIN_PRESSURE_PORTA_ELECTRICAL_VERIFIED
+#define KEVIN_PRESSURE_PORTA_ELECTRICAL_VERIFIED 0
+#endif
+
+// MPXV5010GP datasheet calls for 4.75-5.25V sensor supply. Port A upper
+// switched rail was only observed to power a 3.3V ToF breakout. This
+// diagnostic is locked until the module's actual 5V supply and its separate
+// 3.3V MCP3426 I2C interface are electrically verified. Firmware cannot
+// provide the missing 5V supply through the ToF rail.
+
 namespace {
 constexpr uint32_t kPortAUpperRail = PC9;
 constexpr uint8_t kMcp3426Address = 0x68;
@@ -107,7 +117,12 @@ void setup() {
   Serial.println("# Sensor supply: proven ToF-switched Port A upper rail PC9");
   Serial.println("# Port B disabled; ToF intentionally disconnected");
   Serial.println("# NO CALIBRATION: raw ADC counts only");
-  // Switch on ONLY the Port A upper rail that worked during ToF tests.
+  if (!KEVIN_PRESSURE_PORTA_ELECTRICAL_VERIFIED) {
+    Serial.println("# SAFETY_LOCK pressure module 5V supply and 4-pin I2C wiring unverified");
+    Serial.println("# Port A power and I2C kept OFF; no sensor probe performed");
+    return;
+  }
+  // ONLY enable after actual voltage and cable pinout are verified.
   digitalWrite(kPortAUpperRail, LOW);
   pinMode(kPortAUpperRail, OUTPUT);
   digitalWrite(kPortAUpperRail, HIGH);
@@ -119,6 +134,15 @@ void setup() {
 }
 
 void loop() {
+  if (!KEVIN_PRESSURE_PORTA_ELECTRICAL_VERIFIED) {
+    static uint32_t heartbeat = 0;
+    if (millis() - heartbeat >= 2000) {
+      Serial.println("# SAFETY_LOCK_HEARTBEAT pressure I2C and rail disabled");
+      heartbeat = millis();
+    }
+    delay(20);
+    return;
+  }
   while (Serial.available()) {
     const char c = static_cast<char>(Serial.read());
     if (c == 's' || c == 'S') probe();
