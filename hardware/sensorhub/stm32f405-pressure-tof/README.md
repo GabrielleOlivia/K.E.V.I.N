@@ -14,6 +14,20 @@ This project combines the two separate sensor projects in one STM32 firmware ima
 - Teammate's STM32 ToF project: https://github.com/OlympusSixtems/KEVIN/tree/feature/stm32f405-vl6180x-tof-probe/firmware/tof_probe_f405
 - Pressure prototype: https://github.com/GabrielleOlivia/K.E.V.I.N/blob/feature/pressure-imu-integration/hardware/sensorhub/pressure-imu/src/main.cpp
 
+## New bench preflight: pressure PCB identity unresolved (2026-11-17)
+
+**Do not enable Port B power or flash the enabled two-sensor build yet.** Inspection of the newly uploaded `MonitorHW(4).zip` found the old Eagle `Pressure_Module_v2.1_jan2024.sch`. That design uses an **MP3V5050** pressure transducer, an **MCP3426** ADC (IC2) and a **FOUR-pin** PTSM I2C connector.
+
+The current physical pressure PCB photograph instead shows a part marking starting **MPXV70…** and a **FIVE-wire** connection to the STM32 Port B. This is a **different revision/design**, so the old MCP3426/0x68 data cannot establish the current PCB's electronics. The MPXV70xx *sensor IC* has an analog output; there **may** be an ADC elsewhere on the PCB (including the reverse side). Verify the new PCB backside and any IC2 / MCP3426 markings before assuming I2C.
+
+The current SensorHub v1.1.0b KiCad PCB shows Port B U$59 pads P1=5V, P2=GND, P3=3.3V_OUT1, P4=SCL2, P5=SDA2. **The photographed physical carrier is v1.0.3.** Its Port B P1–P5 assignments and jumper colors were not verified. Do not infer these from the newer revision.
+
+The fifth wire is *consistent with* a sensor needing both 5 V (analog pressure chip) and switched 3.3 V (digital converter), but **that is a hypothesis, not evidence**. A bare MPXV70xx analog output cannot be read as MCP3426 I2C data. Never wire such an analog output directly to an STM32 3.3V-only GPIO without verifying its voltage and the appropriate signal conditioning.
+
+**Already passing:** original STM32 `tof_probe_f405 v0.2`, ToF plugged into Port A upper, valid=1 err=0, raw distances 44–62 mm, roughly 10Hz. Preserve this functional baseline while inspecting the pressure module. Full current MCU flash is backed up in two identical local files.
+
+**First safe test today:** USB power OFF; inspect the current pressure PCB front/reverse for ADC IC markings, labeled pads and wire-to-pin assignments. No software or flash change needed. Then choose either MCP3426 I2C scanner or a properly protected analog ADC input test.
+
 ## Hardware safety: board revision differs
 
 The physical carrier in the supplied photo is RobotPatient SensorHub MicroMod **v1.0.3 (Feb 2025)**. The teammate's pin and power mapping comes from a **v1.1.0b** schematic. **New bench evidence (2026-11-17): ToF physically plugged into the Port A upper socket works under original firmware (`tof_probe_f405 v0.2`) using PB7/PB6 and PC9, yielding repeated `err=0,valid=1` distance values 44–62 mm.** This validates the existing ToF path functionally but does NOT independently verify the Port B pressure socket or its supply/voltage compatibility.
