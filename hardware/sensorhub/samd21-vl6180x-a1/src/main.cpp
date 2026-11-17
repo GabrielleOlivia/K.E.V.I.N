@@ -1,86 +1,133 @@
-// K.E.V.I.N. SAMD21 VL6180X read-only I2C identity test.
-// Port A1 (same Sensor A bus as pressure A2). Unplug pressure + both IMUs.
-// Address 0x29 is shared with BHI360, so do not connect that IMU on bus A.
-// No chip reset or configuration writes; no distance sampling yet.
-// Manikin bench diagnostic only, not a medical measurement.
+// K.E.V.I.N. SAMD21 Sensor A1 live VL6180X distance measurements.
+// Pressure module and BOTH IMUs must be disconnected for this isolated test.
+// The BHI360 chest IMU shares VL6180X's 0x29 address on Sensor A.
+// Adapted from the existing STM32 VL6180X bench code; raw ranging only.
+// Not calibrated compression depth and not for clinical monitoring.
 #include <Arduino.h>
 #include <Wire.h>
 #include "wiring_private.h"
+#include "vl6180x.h"
 
-constexpr uint8_t kSda = 11; // PA16, SERCOM1: old SensorHub A
-constexpr uint8_t kScl = 13; // PA17, SERCOM1: old SensorHub A
-constexpr uint8_t kTofAddr = 0x29;
-constexpr uint16_t kModelIdReg = 0x0000; // VL6180X IDENTIFICATION_MODEL_ID
-constexpr uint8_t kExpectedModelId = 0xB4;
+namespace {
+constexpr uint8_t kSda = 11; // old SAMD21 Sensor A1: PA16, SERCOM1
+constexpr uint8_t kScl = 13; // old SAMD21 Sensor A1: PA17, SERCOM1
+constexpr uint32_t kSampleMs = 250; // 4 samples/second
+constexpr uint32_t kRetryMs = 2000;
+constexpr uint32_t kMeasurementTimeoutMs = 100;
 
 TwoWire sensorA(&sercom1, kSda, kScl);
-void SERCOM1_Handler() { sensorA.onService(); }
+vl6180x::Device tof(sensorA);
+bool ready = false;
+bool streaming = true;
+uint32_t lastSampleMs = 0, lastIdentifyMs = 0;
 
 bool pinIs(uint8_t index, uint32_t port, uint32_t pin) {
   return static_cast<uint32_t>(g_APinDescription[index].ulPort) == port &&
          g_APinDescription[index].ulPin == pin;
 }
-bool ack(uint8_t address) {
-  sensorA.beginTransmission(address);
-  return sensorA.endTransmission(true) == 0;
-}
-bool readRegister8(uint16_t reg, uint8_t &value) {
-  sensorA.beginTransmission(kTofAddr);
-  sensorA.write(static_cast<uint8_t>(reg >> 8));
-  sensorA.write(static_cast<uint8_t>(reg & 0xFF));
-  const uint8_t result = sensorA.endTransmission(false); // repeated start
-  if (result != 0) return false;
-  if (sensorA.requestFrom(kTofAddr, static_cast<uint8_t>(1),
-                          static_cast<uint8_t>(true)) != 1) {
-    while (sensorA.available()) sensorA.read();
-    return false;
-  }
-  if (!sensorA.available()) return false;
-  value = static_cast<uint8_t>(sensorA.read());
-  return true;
-}
-void report() {
-  const bool present = ack(kTofAddr);
-  Serial.print("# TOF_A1 address=0x29 ack=");
-  Serial.println(present ? 1 : 0);
-  if (!present) {
-    Serial.println("# TOF_NOT_DETECTED check power, cable pins, and 0x29 conflict");
+
+void identifyAndInitialize() {
+  lastIdentifyMs = millis();
+  ready = false;
+  if (!tof.present()) {
+    Serial.println("# TOF_ABSENT I2C address 0x29");
     return;
   }
-  uint8_t modelId = 0;
-  if (!readRegister8(kModelIdReg, modelId)) {
-    Serial.println("# TOF_ID_READ_FAILED (ACK alone does not prove VL6180X)");
+
+  vl6180x::Identity identity;
+  if (!tof.readIdentity(identity)) {
+    Serial.println("# TOF_ID_READ_FAILED");
     return;
   }
   Serial.print("# TOF_MODEL_ID value=0x");
-  if (modelId < 16) Serial.print('0');
-  Serial.print(modelId, HEX);
+  if (identity.modelId < 16) Serial.print('0');
+  Serial.print(identity.modelId, HEX);
   Serial.print(" expected=0xB4 identified=");
-  Serial.println(modelId == kExpectedModelId ? 1 : 0);
+  Serial.println(identity.modelId == vl6180x::EXPECTED_MODEL_ID ? 1 : 0);
+
+  if (identity.modelId != vl6180x::EXPECTED_MODEL_ID) {
+    Serial.println("# TOF_WRONG_DEVICE: do not initialize unknown device");
+    return;
+  }
+
+  // Required VL6180X setup writes, matching the STM32's verified driver.
+  // Only initialized AFTER exact VL6180X model-ID validation succeeds.
+  if (!tof.init()) {
+    Serial.println("# TOF_INIT_FAILED: check power and I2C wiring");
+    return;
+  }
+
+  ready = true;
+  lastSampleMs = millis();
+  Serial.println("# TOF_READY: streaming raw distances in mm at ~4 Hz");
+  Serial.println("# Each valid=1 sample has err=0; invalid samples must be ignored");
 }
+
+void sampleIfDue() {
+  if (!streaming) return;
+  uint32_t now = millis();
+  if (!ready) {
+    if (now - lastIdentifyMs >= kRetryMs) identifyAndInitialize();
+    return;
+  }
+  if (now - lastSampleMs < kSampleMs) return;
+  lastSampleMs = now;
+
+  vl6180x::Range range;
+  if (!tof.measure(range, kMeasurementTimeoutMs)) {
+    Serial.println("# TOF_READ_FAILED: timeout or I2C error; retry in 2 s");
+    ready = false;
+    lastIdentifyMs = millis();
+    return;
+  }
+
+  Serial.print("# tof,t_ms=");
+  Serial.print(millis());
+  Serial.print(",raw_mm=");
+  Serial.print(range.mm);
+  Serial.print(",err=");
+  Serial.print(range.errorCode);
+  Serial.print(",valid=");
+  Serial.println(range.errorCode == 0 ? 1 : 0);
+}
+} // namespace
+
+void SERCOM1_Handler() { sensorA.onService(); }
+
 void setup() {
   Serial.begin(115200);
-  const unsigned long t0 = millis();
-  while (!Serial && millis() - t0 < 4000) delay(10);
-  Serial.println("# KEVIN SAMD21 TOF VL6180X A1 READ-ONLY ID v0.1");
-  Serial.println("# No pressure or IMUs connected; only address 0x29 probed");
+  const uint32_t started = millis();
+  while (!Serial && (millis() - started < 4000)) delay(10);
+
+  Serial.println("# KEVIN SAMD21 VL6180X SENSOR A1 LIVE RANGING v0.2");
+  Serial.println("# Isolated ToF only: pressure + both IMUs disconnected");
+  Serial.println("# Raw mm are only valid when err=0 and valid=1");
   if (!pinIs(kSda, PORTA, 16) || !pinIs(kScl, PORTA, 17)) {
-    Serial.println("# FATAL PINMAP_MISMATCH: I2C not initialized");
+    Serial.println("# FATAL PINMAP_MISMATCH: no bus initialized");
     while (true) delay(1000);
   }
+
   sensorA.begin();
   pinPeripheral(kSda, PIO_SERCOM);
   pinPeripheral(kScl, PIO_SERCOM);
   sensorA.setClock(100000);
   delay(200);
-  report();
-  Serial.println("# Commands: s=retry ToF ACK and model ID; h=help");
+  identifyAndInitialize();
+  Serial.println("# Commands: s=retry identify; p=pause/resume stream; h=help");
 }
+
 void loop() {
   while (Serial.available()) {
-    const char c = static_cast<char>(Serial.read());
-    if (c == 's' || c == 'S') report();
-    if (c == 'h' || c == 'H') Serial.println("# s=read-only VL6180X address and ID check");
+    char command = static_cast<char>(Serial.read());
+    if (command == 's' || command == 'S') identifyAndInitialize();
+    else if (command == 'p' || command == 'P') {
+      streaming = !streaming;
+      Serial.println(streaming ? "# STREAM_RUNNING" : "# STREAM_PAUSED");
+      if (streaming) lastSampleMs = millis();
+    } else if (command == 'h' || command == 'H') {
+      Serial.println("# s=retry ToF initialization; p=pause/resume readings; h=help");
+    }
   }
-  delay(20);
+  sampleIfDue();
+  delay(5);
 }
