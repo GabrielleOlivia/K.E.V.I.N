@@ -1,17 +1,17 @@
-# SAMD21 Sensor A1 — live VL6180X ToF ranging
+# SAMD21 Sensor A bus (physically A2) — live VL6180X ToF ranging
 
 ## Goal
 
-Continue the successful **2026-11-17** SAMD21 VL6180X A1 identity test (`0x29 ACK=1`, `model ID 0xB4`, identified=1) by obtaining actual raw distance samples, with a moveable paper target.
+Continue the successful **2026-11-17** SAMD21 VL6180X identity test (physically A2) (`0x29 ACK=1`, `model ID 0xB4`, identified=1) by obtaining actual raw distance samples, with a moveable paper target.
 
 This new branch does NOT overwrite the earlier read-only `feature/samd21-vl6180x-tof-a1-diagnostic` source. It reuses the STM32 test's working `vl6180x.h` driver (including the VL6180X mandatory initialization registers) and the SAMD21's already-tested PA16 SDA and PA17 SCL routing.
 
 ## Hardware and caution
 
 1. Disconnect SAMD21 USB while changing cables.
-2. Connect **only the VL6180X ToF** with the confirmed-compatible keyed four-wire cable to **Sensor A1** (sensor hub A / SERCOM1).
+2. Connect **only the VL6180X ToF** with the confirmed-compatible keyed four-wire cable to **Sensor A2** (sensor hub A / SERCOM1).
 3. Disconnect pressure A2 and both BHI360 IMUs; the A1 chest IMU and VL6180X share I²C `0x29` and cannot coexist on bus A without isolation.
-4. Only after verifying the sensor has 3.3V, GND, SDA and SCL pin-compatible with A1, reconnect USB.
+4. Only after verifying the sensor has 3.3V, GND, SDA and SCL pin-compatible with A2, reconnect USB.
 5. This is a manikin bench diagnostic, not calibrated CPR compression depth nor human medical monitoring.
 
 The firmware uses 100 kHz I²C, verifies model ID `0xB4`, runs the standard VL6180X initialization writes, and streams at approximately **4 samples per second**. It does **not** write firmware to IMUs.
@@ -54,13 +54,13 @@ If `# TOF_ABSENT`, check power and cable. If `# TOF_WRONG_DEVICE`, check for add
 
 ## Prior results and separation
 
-Previously verified on SAMD21: VL6180X A1 ACK and correct `0xB4` identity. Previously verified on STM32 Port A upper: VL6180X distances around 20–130 mm with `err=0`. The **current SAMD21 live range mode is new and not yet physically verified** as of this commit.
+Previously verified on SAMD21: VL6180X A2 ACK and correct `0xB4` identity. Previously verified on STM32 Port A upper: VL6180X distances around 20–130 mm with `err=0`. The **current SAMD21 live range mode is new and not yet physically verified** as of this commit.
 
 The separate STM32 pressure-module I²C issue is not affected by this test.
 
 ## Confirmed live hardware validation — 2026-11-17
 
-The user flashed and ran this branch on the SAMD21 SensorHub with the VL6180X on Sensor A1. The COM3, 115200-baud serial monitor reported:
+The user flashed and ran this branch on the SAMD21 SensorHub with the VL6180X on Sensor A2. The COM3, 115200-baud serial monitor reported:
 
 ```text
 # TOF_MODEL_ID value=0xB4 expected=0xB4 identified=1
@@ -75,4 +75,6 @@ The user flashed and ran this branch on the SAMD21 SensorHub with the VL6180X on
 
 **Hardware test PASS** for sensor identification, VL6180X initialization, continuous raw ranging, and serial streaming. Valid raw samples in the supplied log range approximately **9–192 mm**; intervals with `err=6`, `err=7`, or `err=13` report `valid=0` and **must not be treated as real distance**. Values were observed while moving a target, so this test **does not yet quantify accuracy, precision, repeatability, or behavior against a stationary reference target**.
 
-Sensor A1 0x29 shares an address with the chest BHI360; do not reconnect that IMU to the same I2C bus without address isolation or a different bus. STM32 MCP3426 pressure-ADC communication remains an independent unresolved issue.
+Sensor A bus 0x29 shares an address with the chest BHI360; do not reconnect that IMU to the same I2C bus without address isolation or a different bus. STM32 MCP3426 pressure-ADC communication remains an independent unresolved issue.
+
+**Correction recorded 2026-11-17:** User confirmed the ToF sensor was **physically plugged into A2**, NOT A1, during these successful live tests. The source banner refers to A1 but the actual software bus PA16/PA17 (SERCOM1) serves the Sensor A ports; the successful test does not establish A1-specific physical connector behavior. The historical firmware output and Git branch name are retained for traceability.
