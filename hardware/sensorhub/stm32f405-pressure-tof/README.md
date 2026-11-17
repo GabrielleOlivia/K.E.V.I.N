@@ -1,5 +1,26 @@
 # K.E.V.I.N. — Combined STM32F405 Pressure + VL6180X ToF
 
+## Alternate pressure route prepared (2026-11-17) — NOT TESTED
+
+At user's suggestion, the adjacent Port A lower connector is an alternative for pressure SDA/SCL while ToF stays on Port A upper. **This branch is only prepared; pressure is DISABLED by default.**
+
+From supplied newer v1.1.0b PCB, lower Port A (U$55) has:
+- P1 GND
+- P2 switched **3.3V_OUT3**
+- P3 **SCL1** (PB6)
+- P4 **SDA1** (PB7)
+
+The upper Port A (U$8) similarly has P1 GND, P2 switched 3.3V_OUT2, P3 SCL1, P4 SDA1. Both are the **same I2C1 bus**; ToF 0x29 and pressure ADC 0x68 can coexist if properly powered and logic-level compatible. But **neither Port A connector provides 5 V**, whereas the pressure MPXV5010GP transducer requires 4.75–5.25 V. The photographed board is older carrier revision v1.0.3, whose Port A lower physical pinout is not independently established.
+
+**Do not move the entire 4-pin pressure connector directly to the lower Port A.** Only a correctly verified wiring design that retains required 5V pressure transducer power and valid ADC supply, keeps common GND, and connects just the appropriately leveled SDA/SCL lines to shared I2C1 is acceptable. Do not connect any 5V signal to the 3.3V_OUT3 pad or directly to STM32 I2C pins.
+
+Firmware changes on this branch: `pressureBus` is a reference to `tofBus` (one `TwoWire` instance for I2C1), pressure's *existing* separately verified Port B switched power PC8 stays controlled, and pressure I2C stays OFF until `KEVIN_PRESSURE_IO_ENABLED=1` and `KEVIN_PRESSURE_I2C1_SIGNAL_REWIRE_VERIFIED=1`. Those flags do not verify any physical wiring themselves.
+
+The appropriate next diagnostic if no 5V supply/logic verification is available is a powered-OFF connector inspection or borrowing a multimeter; software cannot establish supply voltage from an I2C ACK. Existing working ToF code/firmware is preserved in separate branches.
+
+---
+
+
 ## Follow-up reliability failure — pressure ADC dropped offline (2026-11-17)
 
 The second real COM9 serial log (around t_ms=164217–184637) confirms ToF stable with stationary target (~31–40 mm, `err=0,valid=1`) but pressure ADC I2C2 stopped responding (`# PRESSURE_FAULT reason=config_write_nack`, `# STATUS pressure_ack=0 tof_ack=1`, repeated `# PRESSURE_ADC_ABSENT address 0x68 on I2C2`). Both user `z` calibration commands correctly returned `# CALIBRATION_SKIPPED...`, because no valid ADC connection was present; this was NOT a serial command input problem.
