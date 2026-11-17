@@ -94,3 +94,9 @@ With the **ToF unplugged from B1**, the user reran the combined firmware on SAMD
 ```
 
 Thus the pressure ADC still NACKs at 0x68 in this firmware with B1 physically empty; a ToF-driven conflict is **not a sufficient explanation**. Next discriminating test: keep the same A2 pressure-only hookup and flash previously working `feature/pressure-imu-integration`, `hardware/sensorhub/pressure-imu`, then send `s` and check `# BUS_CHECK bus=A device=PRESSURE_ADC address=0x68 wire_status=0 ack=1`. If old firmware works, debug new firmware; if old firmware also NACKs, troubleshoot live sensor-side 3.3 V/GND, connector orientation/pin contacts, and continuity.
+
+### Historical pressure-only firmware check — 2026-11-17
+
+The user disconnected ToF and flashed what was intended to be the earlier `hardware/sensorhub/pressure-imu` firmware. On COM3, the observed startup banner was `# KEVIN PRESSURE + DUAL IMU v0.3 OPTIONAL-PRESSURE (no BHI firmware writes)`; `# BUS_CHECK bus=A device=PRESSURE_ADC address=0x68 wire_status=2 ack=0` repeated, and pressure samples were suppressed as `PRESSURE_ABSENT`.
+
+**Critical version qualification:** GitHub's `feature/pressure-imu-integration` currently has a `v0.4 LINK-STABILITY` startup banner, *not* the observed `v0.3 OPTIONAL-PRESSURE`. Thus this serial run does not independently verify that the intended branch's newest firmware was uploaded; check `git branch --show-current` and the `Serial.println` banner in the local source, then verify PlatformIO upload SUCCESS. I2C `wire_status=2` is an address NACK, not a calibrated reading; the physical reason remains unresolved.
