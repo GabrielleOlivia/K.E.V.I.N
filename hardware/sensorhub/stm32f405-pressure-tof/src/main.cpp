@@ -59,11 +59,24 @@ bool ping(TwoWire &bus, uint8_t address) {
   bus.beginTransmission(address);
   return bus.endTransmission() == 0;
 }
+// When the ADC NACKs, stop polling conversions, discard the stale baseline
+// and wait for the existing non-blocking 2-second I2C reconnection check.
+// This is a software recovery path; it cannot fix loose wiring or wrong power.
+void markPressureOffline() {
+  pressurePresent = false;
+  pressurePending = false;
+  calibrating = false;
+  baselineValid = false;
+  eventState = EventState::Idle;
+  lastPressureProbe = millis();
+}
 void status() {
   Serial.print("# STATUS pressure_ack=");
   if (kPressureEnabled) {
-    pressurePresent = ping(pressureBus, kPressureAddr);
-    Serial.print(pressurePresent ? 1 : 0);
+    const bool responding = ping(pressureBus, kPressureAddr);
+    if (!responding) markPressureOffline();
+    else pressurePresent = true;
+    Serial.print(responding ? 1 : 0);
   } else Serial.print("DISABLED");
   Serial.print(" tof_ack=");
   if (kTofEnabled) Serial.println(ping(tofBus, vl6180x::ADDRESS) ? 1 : 0);
@@ -72,7 +85,7 @@ void status() {
 }
 void startCalibration() {
   if (!kPressureEnabled || !pressurePresent) {
-    Serial.println("# CALIBRATION_SKIPPED MCP3426 disabled or absent at startup");
+    Serial.println("# CALIBRATION_SKIPPED MCP3426 disabled or not currently responding");
     return;
   }
   calibrating = true;
@@ -176,7 +189,8 @@ void servicePressure(uint32_t now) {
     pressureBus.write(kAdcConfig);
     if (pressureBus.endTransmission() != 0) {
       pressureFault("config_write_nack");
-      badCalibrationAttempt();
+      markPressureOffline();
+      Serial.println("# PRESSURE_OFFLINE retrying I2C address 0x68 every 2s");
       return;
     }
     pressurePending = true;
