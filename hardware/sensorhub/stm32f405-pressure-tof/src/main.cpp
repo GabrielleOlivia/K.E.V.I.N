@@ -82,17 +82,7 @@ void status() {
   Serial.println("# I2C ACK does not prove valid measurement");
 }
 void startCalibration() {
-  Serial.println("# CALIBRATION_DISABLED: lower Port A alone cannot supply required 5V pressure transducer");
-  return;
-  if (!kPressureEnabled || !pressurePresent) {
-    Serial.println("# CALIBRATION_SKIPPED MCP3426 disabled or not currently responding");
-    return;
-  }
-  calibrating = true;
-  calSum = 0; calMin = 32767; calMax = -32768;
-  calGood = 0; calAttempts = 0;
-  eventState = EventState::Idle;
-  Serial.println("# CALIBRATING pressure at rest, ToF continues");
+  Serial.println("# CALIBRATION_DISABLED: lower Port A provides no verified 5V transducer supply");
 }
 void badCalibrationAttempt() {
   if (!calibrating) return;
