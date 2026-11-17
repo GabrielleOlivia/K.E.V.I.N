@@ -82,3 +82,15 @@ Previously verified:
 The user uploaded the combined firmware and observed repeated `# PRESSURE_ABSENT A2 0x68` and `# TOF_ABSENT B1 0x29` on COM3. Neither device acknowledged in this combination. After testing, the user clarified **the previously successful VL6180X identification and live-range experiments were physically connected to A2**, not A1 as earlier written. Both devices therefore have separate known-working *individual* A2 histories, while ToF on B1 is unverified.
 
 **Next controlled test:** USB power off, remove the ToF from B1, leave pressure on A2, USB power on; send `s` to check `pressure_A2_ack` independently. This isolates whether connecting the B1 device contributes to the pressure problem. Do not infer damage or insufficient voltage solely from NACKs.
+
+### Controlled ToF-disconnected repeat — 2026-11-17
+
+With the **ToF unplugged from B1**, the user reran the combined firmware on SAMD21 COM3. The logs showed:
+
+```text
+# PRESSURE_ABSENT A2 0x68
+# TOF_ABSENT B1 0x29
+# STATUS pressure_A2_ack=0 tof_B1_ack=0 tof_initialized=0
+```
+
+Thus the pressure ADC still NACKs at 0x68 in this firmware with B1 physically empty; a ToF-driven conflict is **not a sufficient explanation**. Next discriminating test: keep the same A2 pressure-only hookup and flash previously working `feature/pressure-imu-integration`, `hardware/sensorhub/pressure-imu`, then send `s` and check `# BUS_CHECK bus=A device=PRESSURE_ADC address=0x68 wire_status=0 ack=1`. If old firmware works, debug new firmware; if old firmware also NACKs, troubleshoot live sensor-side 3.3 V/GND, connector orientation/pin contacts, and continuity.
