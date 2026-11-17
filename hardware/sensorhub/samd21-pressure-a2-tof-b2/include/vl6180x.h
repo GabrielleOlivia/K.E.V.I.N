@@ -19,10 +19,6 @@ const uint8_t EXPECTED_MODEL_ID = 0xB4;
 
 // Public registers used here.
 const uint16_t IDENTIFICATION__MODEL_ID = 0x000;
-const uint16_t IDENTIFICATION__MODEL_REV_MAJOR = 0x001;
-const uint16_t IDENTIFICATION__MODEL_REV_MINOR = 0x002;
-const uint16_t IDENTIFICATION__MODULE_REV_MAJOR = 0x003;
-const uint16_t IDENTIFICATION__MODULE_REV_MINOR = 0x004;
 const uint16_t SYSTEM__INTERRUPT_CONFIG_GPIO = 0x014;
 const uint16_t SYSTEM__INTERRUPT_CLEAR = 0x015;
 const uint16_t SYSTEM__FRESH_OUT_OF_RESET = 0x016;
@@ -30,15 +26,6 @@ const uint16_t SYSRANGE__START = 0x018;
 const uint16_t RESULT__RANGE_STATUS = 0x04D;
 const uint16_t RESULT__INTERRUPT_STATUS_GPIO = 0x04F;
 const uint16_t RESULT__RANGE_VAL = 0x062;
-
-struct Identity {
-    uint8_t modelId = 0;
-    uint8_t modelRevMajor = 0;
-    uint8_t modelRevMinor = 0;
-    uint8_t moduleRevMajor = 0;
-    uint8_t moduleRevMinor = 0;
-    uint8_t freshOutOfReset = 0;
-};
 
 struct Range {
     uint8_t mm = 0;          // raw RESULT__RANGE_VAL (0..255 mm), not calibrated
@@ -80,15 +67,6 @@ public:
         return bus_.endTransmission() == 0;
     }
 
-    bool readIdentity(Identity &id) {
-        return read8(IDENTIFICATION__MODEL_ID, id.modelId) &&
-               read8(IDENTIFICATION__MODEL_REV_MAJOR, id.modelRevMajor) &&
-               read8(IDENTIFICATION__MODEL_REV_MINOR, id.modelRevMinor) &&
-               read8(IDENTIFICATION__MODULE_REV_MAJOR, id.moduleRevMajor) &&
-               read8(IDENTIFICATION__MODULE_REV_MINOR, id.moduleRevMinor) &&
-               read8(SYSTEM__FRESH_OUT_OF_RESET, id.freshOutOfReset);
-    }
-
     // Mandatory private settings (AN4545 §"SR03 settings") plus the
     // recommended public defaults, applied once after a fresh reset.
     bool init() {
@@ -118,7 +96,7 @@ public:
             {0x02A3, 0x00},  // INTERLEAVED_MODE__ENABLE: off
         };
         uint8_t fresh = 0;
-        if (!read8(SYSTEM__FRESH_OUT_OF_RESET, fresh)) {
+        if (!read8(SYSTEM__FRESH_OUT_OF_RESET, fresh) || fresh > 1) {
             return false;
         }
         if (fresh == 1) {
@@ -131,7 +109,8 @@ public:
                 return false;
             }
         }
-        return true;
+        // A completed shot may still be latched after a timeout or MCU reset.
+        return write8(SYSTEM__INTERRUPT_CLEAR, 0x07);
     }
 
     // Single-shot range measurement. Returns false on bus error or timeout.
@@ -164,9 +143,9 @@ public:
 
         uint8_t mm = 0;
         uint8_t rangeStatus = 0;
-        bool ok = read8(RESULT__RANGE_VAL, mm) && read8(RESULT__RANGE_STATUS, rangeStatus);
-        write8(SYSTEM__INTERRUPT_CLEAR, 0x07);
-        if (!ok) {
+        const bool readOk = read8(RESULT__RANGE_VAL, mm) && read8(RESULT__RANGE_STATUS, rangeStatus);
+        const bool cleared = write8(SYSTEM__INTERRUPT_CLEAR, 0x07);
+        if (!readOk || !cleared) {
             return false;
         }
         out.mm = mm;
