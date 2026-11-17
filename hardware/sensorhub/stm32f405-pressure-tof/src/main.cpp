@@ -25,13 +25,14 @@ constexpr uint32_t kPressurePeriodMs = 250;
 constexpr uint32_t kTofPeriodMs = 250;
 constexpr uint32_t kTofRetryMs = 2000;
 
-// Tentative v1.1.0b pinout ONLY. Do not wire or enable for v1.0.3
-// without the actual v1.0.3 schematic/continuity and voltage checks.
-TwoWire pressureBus(PB7, PB6); // SDA, SCL; Port A / I2C1 assumed
-TwoWire tofBus(PB11, PB10);    // SDA, SCL; Port B / I2C2 assumed
+// ToF A-upper PB7/PB6 + PC9 was FUNCTIONALLY verified with the existing firmware.
+// Pressure B PB11/PB10 + PC8 is still v1.1.0b documentation only.
+// Do not wire/enable the pressure rail on v1.0.3 until pinout/voltage verified.
+TwoWire pressureBus(PB11, PB10); // SDA, SCL; Port B / I2C2 assumed; NOT verified on v1.0.3
+TwoWire tofBus(PB7, PB6);       // SDA, SCL; Port A upper / I2C1: working on physical board
 vl6180x::Device tof(tofBus);
-constexpr uint32_t kPressureRail = PC9; // tentative: Port A upper
-constexpr uint32_t kTofRail = PC8;      // tentative: Port B
+constexpr uint32_t kPressureRail = PC8; // tentative: Port B; verify v1.0.3 rail wiring
+constexpr uint32_t kTofRail = PC9;      // Port A upper: observed functioning with existing ToF firmware
 
 bool pressurePresent = false, pressurePending = false;
 bool tofReady = false, baselineValid = false, calibrating = false;
