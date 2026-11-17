@@ -1,5 +1,40 @@
 # K.E.V.I.N. — STM32F405 Pressure-Only Port A Lower Diagnostic
 
+## Enabled bench variant — November 17, 2026
+
+This separate `-bench` branch enables **MCP3426 I2C1 diagnostic only** for the four-pin lower Port A connector, ToF disabled. User reports the proper keyed four-pin cable is connected; **that does not establish the v1.0.3 port's actual voltage or wiring, and is not itself sufficient to justify powering the circuit**.
+
+```ini
+-D KEVIN_TOF_IO_ENABLED=0
+-D KEVIN_PRESSURE_IO_ENABLED=1
+-D KEVIN_PRESSURE_A_LOWER_PINOUT_VERIFIED=1
+```
+
+The compile-time verification flag is a software opt-in, NOT a multimeter test. The actual board is v1.0.3, the reference schematic is v1.1.0b, and the actual pressure transducer requires 4.75–5.25V. If the *actual* lower Port A supplies only 3.3V, then the ADC may answer but pressure transducer readings cannot be considered valid. Also verify I2C pullups are at 3.3V, correct GND and no 5V on STM32 lines. Do not attach an external 5V source to the lower Port A power pad. Stop before flash or power if the pin arrangement and levels are uncertain.
+
+With electrical safety independently confirmed, build:
+
+```powershell
+cd "$env:USERPROFILE\Documents\K.E.V.I.N"
+git fetch origin
+git switch --track origin/feature/stm32f405-pressure-only-porta-lower-bench
+cd .\hardware\sensorhub\stm32f405-pressure-tof
+& "$env:USERPROFILE\.platformio\penv\Scripts\platformio.exe" run
+```
+
+With the valid backup retained, USB DFU program `.pio/build/micromod_f405_pressure_tof/firmware.bin` in STM32CubeProgrammer at `0x08000000` with Verify enabled, no additional mass erase or option byte changes. After reset, open current STM32 COM port at 115200 baud. Expected serial for an answering ADC (examples only, NOT an observed hardware result):
+
+```text
+# KEVIN STM32 PRESSURE ADC ONLY lower Port A v0.1
+# PRESSURE_ADC_PRESENT (I2C/ADC diagnostic only)
+# STATUS pressure_ack=1 tof_ack=DISABLED
+# pressure_adc,t_ms=...,raw_adc=...,adc_conversion_valid=1,pressure_calibrated=0
+```
+
+Send `s` to repeat ACK status. `z` reports calibration disabled. Do not inject pressure using a syringe to infer correct functioning without a confirmed 5V transducer supply. If status is `pressure_ack=0`, do not keep swapping hardware while powered. The previously working ToF firmware remains on the separate `feature/stm32f405-pressure-tof-integration` branch.
+
+---
+
 **Status: code prepared but not compiled or flashed on physical hardware. Hardware pin ordering and supply validation outstanding.**
 
 ## Why this branch exists
