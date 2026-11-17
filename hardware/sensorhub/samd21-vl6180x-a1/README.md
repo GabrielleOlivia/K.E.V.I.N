@@ -57,3 +57,22 @@ If `# TOF_ABSENT`, check power and cable. If `# TOF_WRONG_DEVICE`, check for add
 Previously verified on SAMD21: VL6180X A1 ACK and correct `0xB4` identity. Previously verified on STM32 Port A upper: VL6180X distances around 20–130 mm with `err=0`. The **current SAMD21 live range mode is new and not yet physically verified** as of this commit.
 
 The separate STM32 pressure-module I²C issue is not affected by this test.
+
+## Confirmed live hardware validation — 2026-11-17
+
+The user flashed and ran this branch on the SAMD21 SensorHub with the VL6180X on Sensor A1. The COM3, 115200-baud serial monitor reported:
+
+```text
+# TOF_MODEL_ID value=0xB4 expected=0xB4 identified=1
+# TOF_READY: streaming raw distances in mm at ~4 Hz
+# tof,t_ms=6515,raw_mm=159,err=0,valid=1
+# tof,t_ms=6764,raw_mm=47,err=0,valid=1
+# tof,t_ms=17067,raw_mm=64,err=0,valid=1
+# tof,t_ms=18078,raw_mm=12,err=0,valid=1
+# tof,t_ms=18837,raw_mm=9,err=0,valid=1
+# tof,t_ms=25449,raw_mm=255,err=7,valid=0
+```
+
+**Hardware test PASS** for sensor identification, VL6180X initialization, continuous raw ranging, and serial streaming. Valid raw samples in the supplied log range approximately **9–192 mm**; intervals with `err=6`, `err=7`, or `err=13` report `valid=0` and **must not be treated as real distance**. Values were observed while moving a target, so this test **does not yet quantify accuracy, precision, repeatability, or behavior against a stationary reference target**.
+
+Sensor A1 0x29 shares an address with the chest BHI360; do not reconnect that IMU to the same I2C bus without address isolation or a different bus. STM32 MCP3426 pressure-ADC communication remains an independent unresolved issue.
