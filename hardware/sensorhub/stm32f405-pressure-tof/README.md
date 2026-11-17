@@ -6,7 +6,7 @@ This project combines the two separate sensor projects in one STM32 firmware ima
 
 - Pressure: MCP3426 ADC at I2C address **0x68**, with the CH1 one-shot 16-bit setting **0x88**, adapted from the SAMD21 pressure project.
 - ToF: VL6180X at I2C address **0x29**, with expected model ID **0xB4**, using the teammate's driver and initialization routine.
-- Both can share one I2C bus because their addresses differ, provided power, levels and wiring are compatible; this initial layout places pressure on I2C1 and ToF on I2C2.
+- Both can share one I2C bus because their addresses differ, provided power, levels and wiring are compatible; this revision retains the ToF on the proven Port A upper I2C1 connection and tentatively places pressure on Port B I2C2.
 
 ## Sources
 
@@ -16,7 +16,7 @@ This project combines the two separate sensor projects in one STM32 firmware ima
 
 ## Hardware safety: board revision differs
 
-The physical carrier in the supplied photo is RobotPatient SensorHub MicroMod **v1.0.3 (Feb 2025)**. The teammate's pin and power mapping comes from a **v1.1.0b** schematic, and CANNOT be assumed correct for v1.0.3.
+The physical carrier in the supplied photo is RobotPatient SensorHub MicroMod **v1.0.3 (Feb 2025)**. The teammate's pin and power mapping comes from a **v1.1.0b** schematic. **New bench evidence (2026-11-17): ToF physically plugged into the Port A upper socket works under original firmware (`tof_probe_f405 v0.2`) using PB7/PB6 and PC9, yielding repeated `err=0,valid=1` distance values 44–62 mm.** This validates the existing ToF path functionally but does NOT independently verify the Port B pressure socket or its supply/voltage compatibility.
 
 By default platformio.ini sets **KEVIN_SENSOR_IO_ENABLED=0**. When running this default firmware, it only prints a USB heartbeat: it does NOT drive the sensor rails, initialize I2C, scan, or perform conversions.
 
@@ -24,14 +24,14 @@ By default platformio.ini sets **KEVIN_SENSOR_IO_ENABLED=0**. When running this 
 
 | Sensor | Tentative location | I2C bus | Tentative STM32 SDA/SCL | Tentative 3.3V rail switch |
 |---|---|---|---|---|
-| Pressure MCP3426 0x68 | Port A upper | I2C1 | PB7/PB6 | PC9/G4 |
-| ToF VL6180X 0x29 | Port B | I2C2 | PB11/PB10 | PC8/G3 |
+| Pressure MCP3426 0x68 | Port B (proposed, **NOT physically verified**) | I2C2 | PB11/PB10 | PC8/G3 |
+| ToF VL6180X 0x29 | Port A upper (**physically functioning with original firmware**) | I2C1 | PB7/PB6 | PC9/G4 |
 
 Verify every connector pin and output rail against the **actual v1.0.3** schematic or lab electrical measurements. Check supply voltage, common ground, I2C pullups, sensor cable pin order, and breakout electronics.
 
 The *bare* VL6180X IC needs a supply around 2.8V, so a 3.3V supply is safe only if the actual ToF **breakout** is designed to tolerate it. The physical pressure transducer may require a different supply from the MCP3426 ADC side. Do not connect raw 5V signal/power to STM32 3.3V pins.
 
-If the ToF is assigned to the same bus as a future BHI360, both default to address 0x29 and will conflict. That conflict does not affect this two-sensor pressure+ToF stage.
+If a BHI360 is assigned to the same bus as the ToF, both default to address 0x29 and will conflict. That conflict does not affect this two-sensor pressure+ToF stage.
 
 ## Build only
 
@@ -82,7 +82,7 @@ The current 1MB STM32 flash image was saved to two identical local files (SHA-25
 
 ## Suggested next checks
 
-1. Confirm that the v1.0.3 physical connector pinout and 3.3V switched rails match or differ from the v1.1.0b schematic.
+1. Retain the working ToF on Port A upper. Verify the v1.0.3 Port B connector pinout, switched rail and pressure board voltage independently; the ToF path alone does not prove Port B is safe.
 2. Photograph/identify the MCP3426 pressure ADC module and VL6180X ToF breakout; verify their acceptable power levels.
 3. Build this firmware on the user's existing PlatformIO STM32 toolchain. Do not upload.
 4. After electrical validation and team approval, enable sensor I/O, rebuild, then test pressure ACK, raw ADC samples, ToF ID and raw ranging together.
