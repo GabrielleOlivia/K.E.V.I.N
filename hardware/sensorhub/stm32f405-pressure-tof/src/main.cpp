@@ -1,8 +1,8 @@
-// K.E.V.I.N. STM32F405 ISOLATED PRESSURE ADC DIAGNOSTIC, Port A lower.
-// ToF disabled (Port A upper physically disconnected), Port B disabled.
+// K.E.V.I.N. STM32F405 ISOLATED PRESSURE ADC DIAGNOSTIC, Port A UPPER.
+// ToF disabled AND physically disconnected. Pressure uses its upper Port A socket.
 // Actual carrier v1.0.3; reference PCB is v1.1.0b, so pinout unconfirmed.
-// Lower connector in newer PCB: switched 3.3 V via PC13, SDA PB7, SCL PB6.
-// MPXV5010GP transducer requires 4.75–5.25 V: the lower 3.3 V connector
+// Upper Port A: I2C1 PB7 SDA, PB6 SCL, switched 3.3 V PC9; ToF bench verified.
+// MPXV5010GP transducer requires 4.75–5.25 V: the upper 3.3 V connector
 // cannot supply a correctly operating pressure transducer by itself.
 // This is a MCP3426 I2C/ADC diagnostic only, NOT a calibrated pressure test.
 
@@ -14,13 +14,13 @@
 #ifndef KEVIN_TOF_IO_ENABLED
 #define KEVIN_TOF_IO_ENABLED 0
 #endif
-// Pressure I2C power-up requires explicit v1.0.3 lower-connector verification.
+// Pressure I2C power-up requires explicit upper-connector cable & logic verification.
 #ifndef KEVIN_PRESSURE_IO_ENABLED
 #define KEVIN_PRESSURE_IO_ENABLED 0
 #endif
 #if KEVIN_PRESSURE_IO_ENABLED
-  #if !defined(KEVIN_PRESSURE_A_LOWER_PINOUT_VERIFIED) || KEVIN_PRESSURE_A_LOWER_PINOUT_VERIFIED != 1
-    #error "Verify ACTUAL v1.0.3 Port A lower power/GND/SDA/SCL and STM32-safe logic levels before enabling I2C."
+  #if !defined(KEVIN_PRESSURE_A_UPPER_PINOUT_VERIFIED) || KEVIN_PRESSURE_A_UPPER_PINOUT_VERIFIED != 1
+    #error "Confirm upper Port A connector/cable GND, 3.3V, SDA/SCL match and are STM32-safe before I2C test."
   #endif
 #endif
 
@@ -34,14 +34,14 @@ constexpr uint32_t kPressurePeriodMs = 250;
 constexpr uint32_t kTofPeriodMs = 250;
 constexpr uint32_t kTofRetryMs = 2000;
 
-// Pressure uses ONLY I2C1 PB7/PB6 on lower Port A; ToF is disabled.
-// Port A lower PC13 is a switched 3.3 V rail on the newer schematic.
-// The 5 V transducer supply is not provided here; raw counts are ADC-only.
-TwoWire tofBus(PB7, PB6);       // SDA, SCL; lower Port A / I2C1
+// Pressure uses ONLY I2C1 PB7/PB6 on upper Port A; ToF is disabled.
+// Upper Port A PC9 previously powered VL6180X successfully.
+// No verified 5 V transducer supply is provided; raw counts are ADC-only.
+TwoWire tofBus(PB7, PB6);       // SDA, SCL; upper Port A / I2C1
 TwoWire &pressureBus = tofBus; // one peripheral, shared alias
 vl6180x::Device tof(tofBus);   // inert; ToF I/O compile flag must remain 0
-constexpr uint32_t kPressureRail = PC13; // Lower Port A switched 3.3V ONLY
-constexpr uint32_t kTofRail = PC9;      // remains OFF; ToF disconnected
+constexpr uint32_t kPressureRail = PC9; // Upper Port A switched 3.3V ONLY
+constexpr uint32_t kTofRail = PC9;      // alias pin; ToF function remains OFF
 
 bool pressurePresent = false, pressurePending = false;
 bool tofReady = false, baselineValid = false, calibrating = false;
@@ -82,7 +82,7 @@ void status() {
   Serial.println("# I2C ACK does not prove valid measurement");
 }
 void startCalibration() {
-  Serial.println("# CALIBRATION_DISABLED: lower Port A provides no verified 5V transducer supply");
+  Serial.println("# CALIBRATION_DISABLED: upper Port A provides no verified 5V transducer supply");
 }
 void badCalibrationAttempt() {
   if (!calibrating) return;
@@ -259,9 +259,9 @@ void setup() {
   Serial.begin(115200);
   const uint32_t started = millis();
   while (!Serial && millis() - started < 3000) delay(10);
-  Serial.println("# KEVIN STM32 PRESSURE ADC ONLY lower Port A v0.1");
+  Serial.println("# KEVIN STM32 PRESSURE ADC ONLY upper Port A v0.2");
   Serial.println("# ToF disabled/disconnected; only MCP3426 address 0x68 on I2C1");
-  Serial.println("# WARNING: Port A lower 3.3V is not the MPXV5010GP required 5V");
+  Serial.println("# WARNING: Upper Port A 3.3V does not establish MPXV5010GP 5V supply");
   Serial.println("# Valid ADC samples do not prove real pressure sensing");
   Serial.println("# Physical v1.0.3 port pinout must be verified before sensor I/O");
   if (!kTofEnabled && !kPressureEnabled) {
@@ -283,7 +283,7 @@ void setup() {
     Serial.println("# TOF_IO_DISABLED");
   }
 
-  // Only enable lower Port A when pin order and ADC logic levels verified.
+  // Only enable upper Port A if cable pin order and logic levels are verified.
   if (kPressureEnabled) {
     digitalWrite(kPressureRail, LOW);
     pinMode(kPressureRail, OUTPUT);
@@ -300,7 +300,7 @@ void setup() {
     Serial.println(pressurePresent ? "# PRESSURE_ADC_PRESENT (I2C/ADC diagnostic only)" :
                                      "# PRESSURE_ADC_ABSENT (no data will be reported)");
   } else {
-    Serial.println("# PRESSURE_IO_DISABLED lower Port A untouched");
+    Serial.println("# PRESSURE_IO_DISABLED upper Port A untouched");
   }
   status();
   Serial.println("# Commands: s=ADC ACK; z=disabled until 5V pressure supply verified; h=help");
@@ -327,7 +327,7 @@ void loop() {
       lastPressureProbe = millis();
       pressurePresent = ping(pressureBus, kPressureAddr);
       if (pressurePresent) Serial.println("# PRESSURE_ADC_RECONNECTED; readings enabled");
-      else Serial.println("# PRESSURE_ADC_ABSENT address 0x68 on I2C1 Port A lower");
+      else Serial.println("# PRESSURE_ADC_ABSENT address 0x68 on I2C1 Port A upper");
     }
     servicePressure(millis());
   }
