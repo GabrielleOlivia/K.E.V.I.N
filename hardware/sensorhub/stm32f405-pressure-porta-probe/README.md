@@ -10,6 +10,16 @@ The four-contact **SimModule Pressure v2.0.0, Jan 2026** is physically marked **
 
 Rather than experiment with the unverified five-pin Port B on the v1.0.3 carrier, this temporary program reuses the known-working four-pin Port A upper connection for the pressure sensor, **one sensor at a time**. No Port B, I2C2 or PC8 pin is configured.
 
+## Safety correction after first successful compile (2026-11-17)
+
+The user successfully built the pressure-only diagnostic on the STM32F405 (RAM 5,208 bytes; flash 34,052 bytes). **This is compile-only evidence; no pressure communication has been observed.**
+
+The physically confirmed pressure IC **MPXV5010GP** requires **4.75–5.25 V** supply under its datasheet. The known-good ToF connector, Port A upper, uses a **switched 3.3 V rail** in the available v1.1.0b reference and physically powered the ToF on v1.0.3. Supplying a bare MPXV5010GP from 3.3 V would be out of specification; an I2C ACK alone would not prove valid pressure sensing. The actual pressure module's **separate 5 V transducer supply**, ADC voltage, I2C voltage levels and connector pinout remain unverified.
+
+**Safety fix now applied:** `platformio.ini` defaults to `KEVIN_PRESSURE_PORTA_ELECTRICAL_VERIFIED=0` and firmware prints a safety-lock heartbeat without energizing Port A or probing I2C. Only change this flag to 1 after confirming the correct pressure PCB power arrangement and signal/pin mapping; merely toggling it will NOT magically provide 5 V on the Port A connector. Therefore do NOT upload this branch for a pressure hardware test yet. Use known-good SAMD21 Sensor A2 wiring for a separately verified pressure test, or obtain the matching v1.0.3/v2.0 PCB schematic and a multimeter/power-supply check.
+
+Relevant datasheet: https://www.nxp.com/part/MPXV5010GP
+
 ## Critical safety precondition
 
 With **USB power OFF**, disconnect the ToF module from Port A upper and disconnect **all** pressure jumper wires from Port B. Do not leave loose wires attached while powering the board.
