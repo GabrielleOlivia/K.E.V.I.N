@@ -2,6 +2,8 @@
 // Pressure MCP3426 logic adapted from hardware/sensorhub/pressure-imu/src/main.cpp.
 // VL6180X driver supplied by OlympusSixtems/KEVIN (see include/vl6180x.h).
 // Photo: RobotPatient SensorHub carrier v1.0.3, NOT the v1.1.0b source schematic.
+// This optional experimental branch routes pressure I2C onto shared Port A
+// bus while leaving power on its separate verified Port B supply.
 // This live-bench branch explicitly enables both sensors after user wiring confirmation.
 // Raw ADC counts != calibrated pressure; ToF mm != calibrated compression depth.
 
@@ -18,6 +20,9 @@
 #define KEVIN_PRESSURE_IO_ENABLED 0
 #endif
 #if KEVIN_PRESSURE_IO_ENABLED
+  #if !defined(KEVIN_PRESSURE_I2C1_SIGNAL_REWIRE_VERIFIED) || KEVIN_PRESSURE_I2C1_SIGNAL_REWIRE_VERIFIED != 1
+    #error "Before pressure on shared I2C1, verify the actual Port A lower SDA/SCL reroute AND compatible voltage levels."
+  #endif
   #if !defined(KEVIN_CARRIER_V103_PORT_B_VERIFIED) || !defined(KEVIN_PRESSURE_INTERFACE_VERIFIED)
     #error "Confirm actual v1.0.3 Port B pinout, pressure PCB supply and I2C logic levels before enabling pressure I2C."
   #elif (KEVIN_CARRIER_V103_PORT_B_VERIFIED != 1) || (KEVIN_PRESSURE_INTERFACE_VERIFIED != 1)
@@ -39,8 +44,8 @@ constexpr uint32_t kTofRetryMs = 2000;
 // Pressure B PB11/PB10 + PC8: based on v1.1.0b docs, user reports verified
 // mapping on their v1.0.3 carrier. Actual 5V transducer supply and 3.3V
 // I2C pullups MUST be electrically compatible; raw readings uncalibrated.
-TwoWire pressureBus(PB11, PB10); // SDA, SCL; Port B / I2C2; user confirmed wiring
-TwoWire tofBus(PB7, PB6);       // SDA, SCL; Port A upper / I2C1: working on physical board
+TwoWire tofBus(PB7, PB6);       // SDA, SCL; shared Port A I2C1
+TwoWire &pressureBus = tofBus; // same I2C1 peripheral; avoid duplicate I2C controller
 vl6180x::Device tof(tofBus);
 constexpr uint32_t kPressureRail = PC8; // Port B switched 3.3V logic/ADC rail
 constexpr uint32_t kTofRail = PC9;      // Port A upper: observed functioning with existing ToF firmware
@@ -296,8 +301,12 @@ void setup() {
     pinMode(kPressureRail, OUTPUT);
     digitalWrite(kPressureRail, HIGH);
     delay(50);
-    pressureBus.begin();
-    pressureBus.setClock(100000);
+    // Both Port A connectors use I2C1, so share the ONE initialized
+    // TwoWire object. Do not begin the STM32 I2C1 peripheral twice.
+    if (!kTofEnabled) {
+      pressureBus.begin();
+      pressureBus.setClock(100000);
+    }
     pressurePresent = ping(pressureBus, kPressureAddr);
     lastPressureProbe = millis();
     Serial.println(pressurePresent ? "# PRESSURE_ADC_PRESENT send z for zero calibration" :
