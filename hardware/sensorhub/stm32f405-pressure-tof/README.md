@@ -1,6 +1,6 @@
 # K.E.V.I.N. — Combined STM32F405 Pressure + VL6180X ToF
 
-**Status: prepared in GitHub; not yet built on the user's machine, not flashed, not hardware-tested.**
+**Status: combined firmware build succeeded on user's Windows toolchain; not flashed or hardware-tested as a combined program.** The existing original ToF-only firmware produced real valid ranging data on the physical STM32.
 
 This project combines the two separate sensor projects in one STM32 firmware image:
 
@@ -24,11 +24,22 @@ The new STM32 photo shows a v1.0.3 (Feb 2025) carrier. The separately supplied v
 
 **Already working on physical STM32:** original `tof_probe_f405 v0.2` with ToF on Port A upper, I2C1 PB7/PB6, PC9 rail control, yielding valid=1, err=0, raw distances 44-62 mm. Keep this firmware and wiring as the functional regression baseline until Port B is verified. Existing STM32 flash was backed up to two equal SHA-256 local copies.
 
+## Current planned physical regression test (ToF only)
+
+1. **Disconnect STM32 USB power and completely unplug the unverified pressure sensor jumper harness from the SensorHub**. Avoid loose powered jumper ends. Leave the keyed, demonstrated ToF cable on Port A upper.
+2. Build the new firmware with `KEVIN_TOF_IO_ENABLED=1` and `KEVIN_PRESSURE_IO_ENABLED=0`. Review these flags: pressure must read **0**.
+3. Verify the original image still exists in the two local `KEVIN_STM32_original_backup.bin` copies. These were SHA-256 equal but restore has not been tested.
+4. To deploy if team-approved, use STM32CubeProgrammer **USB DFU bootloader** (hold BOOT, tap RESET, release BOOT), choose the built **.pio/build/micromod_f405_pressure_tof/firmware.bin**, start **0x08000000**, download/verify, then reset to run. Only the active ToF rail PC9 is toggled.
+5. Open PlatformIO Serial Monitor at the enumerated COM port. Expect `# PRESSURE_IO_DISABLED Port B untouched`, `# TOF_READY VL6180X; raw distance only`, and `# tof,...,err=0,valid=1` for a white target ~5 cm away.
+6. If no ToF samples, disconnect USB and preserve the serial output. Do **not** attempt Port B pressure wiring until source pin mapping verified.
+
+This is a deliberate temporary regression test, **not** simultaneous pressure+ToF validation. After it passes, the next hardware task is confirm pressure v2.0 connector pin assignments against STM32 v1.0.3 Port B; only then enable pressure and sample both devices.
+
 ## Hardware safety: board revision differs
 
 The physical carrier in the supplied photo is RobotPatient SensorHub MicroMod **v1.0.3 (Feb 2025)**. The teammate's pin and power mapping comes from a **v1.1.0b** schematic. **New bench evidence (2026-11-17): ToF physically plugged into the Port A upper socket works under original firmware (`tof_probe_f405 v0.2`) using PB7/PB6 and PC9, yielding repeated `err=0,valid=1` distance values 44–62 mm.** This validates the existing ToF path functionally but does NOT independently verify the Port B pressure socket or its supply/voltage compatibility.
 
-By default platformio.ini sets **KEVIN_SENSOR_IO_ENABLED=0**. When running this default firmware, it only prints a USB heartbeat: it does NOT drive the sensor rails, initialize I2C, scan, or perform conversions.
+**Current first regression-test default (2026-11-17):** `KEVIN_TOF_IO_ENABLED=1` and `KEVIN_PRESSURE_IO_ENABLED=0`. This activates ONLY the already demonstrated ToF port A upper (PB7/PB6 and PC9) and does **not** configure the pressure I2C2 bus or toggle pressure rail PC8. **Disconnect every pressure jumper with USB power OFF before using this firmware.** The previous `KEVIN_SENSOR_IO_ENABLED` flag has been replaced by independent device flags. The previous USB-only build may be recovered by setting both flags to 0.
 
 **Tentative v1.1.0b reference only — do NOT wire according to this without verifying the v1.0.3 PCB:**
 
@@ -54,15 +65,16 @@ From the K.E.V.I.N. repository, in VS Code PowerShell:
 
 If you are already tracking the branch, use git pull --ff-only instead of git switch --track.
 
-Expected when the code compiles: PlatformIO prints [SUCCESS]. **Do not use upload yet** — the default firmware intentionally has no sensor I/O and would replace the current program needlessly.
+Expected when the code compiles: PlatformIO prints [SUCCESS]. **Before uploading:** physically disconnect the pressure harness with USB off, retain the previously proven ToF connection, and confirm two local backup hashes. This build replaces the ToF-only app; be prepared to restore its saved original binary via STM32CubeProgrammer DFU if ToF regresses. Test using the already-verified ToF path only; do not enable pressure yet.
 
 ## Enabling hardware later — not yet approved
 
 Only after verifying the v1.0.3 connector pins, switched rails, ToF breakout voltage and pressure ADC/transducer wiring, review/edit the tentative kPressureRail, kTofRail, TwoWire buses in src/main.cpp and opt into the following flags in platformio.ini:
 
-    -D KEVIN_SENSOR_IO_ENABLED=1
-    -D KEVIN_CARRIER_V103_PINMAP_VERIFIED=1
-    -D KEVIN_SENSOR_SUPPLIES_VERIFIED=1
+    -D KEVIN_TOF_IO_ENABLED=1
+    -D KEVIN_PRESSURE_IO_ENABLED=1
+    -D KEVIN_CARRIER_V103_PORT_B_VERIFIED=1
+    -D KEVIN_PRESSURE_INTERFACE_VERIFIED=1
 
 The second and third flags are manual safety declarations, **not proof**. Never enable them without validating physical wiring, and agree on DFU upload/restore with the team before replacing original firmware.
 
