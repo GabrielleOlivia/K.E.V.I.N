@@ -1,4 +1,4 @@
-# SAMD21 Sensor A1 — VL6180X read-only test
+# SAMD21 Sensor A bus (physically A2) — VL6180X read-only test
 
 This is an isolated test of the *ToF sensor* on the older Feather M0 Express (SAMD21) carrier, not a pressure sensor test. It is deliberately separate from the integrated pressure/IMU firmware and does not alter that source.
 
@@ -6,9 +6,9 @@ This is an isolated test of the *ToF sensor* on the older Feather M0 Express (SA
 
 - **Disconnect USB power before any wiring changes.**
 - Remove pressure module (A2) and both IMUs (A1/B1).
-- Plug *only* the VL6180X ToF using a confirmed-compatible keyed connector into **Sensor A1**.
+- Plug *only* the VL6180X ToF using a confirmed-compatible keyed connector into **Sensor A2**.
 - Confirm the actual port/cable pin order and power rails (GND, 3.3 V, SDA, SCL) before powering; same connector shape is not proof of pin compatibility.
-- Sensor A1 shares the same I2C SERCOM1 bus as Sensor A2: SAMD21 **PA16 SDA**, **PA17 SCL**; VL6180X expected address **0x29**.
+- Sensor A2 is on I2C SERCOM1: SAMD21 **PA16 SDA**, **PA17 SCL**; VL6180X expected address **0x29**.
 - The chest BHI360 IMU also uses **0x29**. It must not be connected to this bus at the same time.
 
 ## What the firmware does
@@ -17,7 +17,7 @@ At 100 kHz I2C: (1) address-ACK at `0x29`; (2) if responding, read the VL6180X m
 
 ## Build and upload
 
-On Windows PowerShell, after confirming sensor A1 wiring:
+On Windows PowerShell, after confirming sensor A2 wiring:
 
 ```powershell
 cd "$env:USERPROFILE\Documents\K.E.V.I.N"
@@ -33,14 +33,14 @@ COM3 is the previously observed SAMD21 COM port; re-run `platformio device list`
 
 ## Confirmed hardware result — 2026-11-17
 
-User tested the dedicated SAMD21 VL6180X A1 firmware using COM3 at 115200 baud. On pressing `s` in the Serial Monitor, the firmware reported:
+User tested the dedicated SAMD21 VL6180X firmware (ToF physically A2) using COM3 at 115200 baud. On pressing `s` in the Serial Monitor, the firmware reported:
 
 ```text
 # TOF_A1 address=0x29 ack=1
 # TOF_MODEL_ID value=0xB4 expected=0xB4 identified=1
 ```
 
-**Result: PASS** — MCP-free, isolated VL6180X identification on SAMD21 Sensor A1, including I²C address acknowledgement and expected model-ID read. This test did **not** initialize ranging or confirm distance measurements. It does not establish the STM32 pressure module's power or wiring.
+**Result: PASS** — MCP-free, isolated VL6180X identification on SAMD21 Sensor A2, including I²C address acknowledgement and expected model-ID read. This test did **not** initialize ranging or confirm distance measurements. It does not establish the STM32 pressure module's power or wiring.
 
 ## Example output (now observed on physical hardware)
 
@@ -51,3 +51,5 @@ User tested the dedicated SAMD21 VL6180X A1 firmware using COM3 at 115200 baud. 
 ```
 
 If `ack=0`: device did not answer; investigate voltage, cable, orientation and bus. If `ack=1` but ID is wrong, another I2C device (such as BHI360) may be at address 0x29, or register read failed. Send `s` through serial monitor to repeat. If identity passes, the next step is a separate VL6180X initialization/ranging implementation.
+
+**Correction recorded 2026-11-17:** User confirmed the ToF was **physically connected to A2**, NOT A1, for this successful read-only test. Earlier source banners and the Git branch name mention A1; those labels did not establish where the plug was connected. The I2C pin assignment PA16/PA17 / SERCOM1 is unchanged.
