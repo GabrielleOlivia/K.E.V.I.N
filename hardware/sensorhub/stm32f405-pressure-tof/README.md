@@ -1,5 +1,28 @@
 # K.E.V.I.N. — Combined STM32F405 Pressure + VL6180X ToF
 
+## Shared-I2C1 experiment: bench flags enabled for build (2026-11-17)
+
+User reports ToF + pressure physical wiring now connected. The **shared-bus firmware branch** is configured for both drivers: `KEVIN_TOF_IO_ENABLED=1`, `KEVIN_PRESSURE_IO_ENABLED=1`, `KEVIN_PRESSURE_I2C1_SIGNAL_REWIRE_VERIFIED=1`. The report of connection is **not** proof of safe voltage levels or pin ordering. Do not power the circuit if the 5 V pressure transducer feed, the 3.3 V-safe I2C logic pull-ups, common GND and the actual Port A lower signal pin assignments have not been independently confirmed. Only the two I2C signal lines should be routed to Port A lower; the 5 V pressure supply must be retained separately.
+
+One STM32 I2C1 object `TwoWire tofBus(PB7, PB6)` is shared by the ToF (0x29) and MCP3426 pressure ADC (0x68); Port B I2C2 is not initialized. Pressure power control PC8 and ToF power PC9 remain as before; PC13 for A lower switched rail is NOT touched. No wire should be changed while USB is connected.
+
+**Build only:**
+
+```powershell
+cd "$env:USERPROFILE\Documents\K.E.V.I.N"
+git switch feature/stm32f405-pressure-shared-i2c1-test
+git pull --ff-only
+cd .\hardware\sensorhub\stm32f405-pressure-tof
+Get-Content .\platformio.ini
+& "$env:USERPROFILE\.platformio\penv\Scripts\platformio.exe" run
+```
+
+**Only after supply and pin/level confirmation**, use STM32CubeProgrammer DFU to program `.pio/build/micromod_f405_pressure_tof/firmware.bin` at `0x08000000` with Verify on (no separate mass erase or option bytes), reset without BOOT. Start COM port Serial Monitor at 115200; send `s`, expect `# STATUS pressure_ack=1 tof_ack=1`; then look for continuing `# pressure,t_ms=...,raw_adc=...,valid=1` and `# tof,t_ms=...,raw_mm=...,err=0,valid=1`. ACK alone does not prove pressure calibration. Use `z` ONLY once ADC stays online and pressure is at rest; check `# CALIBRATION_OK` then gentle syringe response. If `pressure_ack=0`, stop and inspect power and signal routing *unpowered*, not repeated software resets.
+
+Hardware results from this branch: **NONE** as of this commit. Previous successful simultaneous data was on I2C2 Port B and was intermittent.
+
+---
+
 ## Alternate pressure route prepared (2026-11-17) — NOT TESTED
 
 At user's suggestion, the adjacent Port A lower connector is an alternative for pressure SDA/SCL while ToF stays on Port A upper. **This branch is only prepared; pressure is DISABLED by default.**
