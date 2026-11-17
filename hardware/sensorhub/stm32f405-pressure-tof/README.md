@@ -14,19 +14,15 @@ This project combines the two separate sensor projects in one STM32 firmware ima
 - Teammate's STM32 ToF project: https://github.com/OlympusSixtems/KEVIN/tree/feature/stm32f405-vl6180x-tof-probe/firmware/tof_probe_f405
 - Pressure prototype: https://github.com/GabrielleOlivia/K.E.V.I.N/blob/feature/pressure-imu-integration/hardware/sensorhub/pressure-imu/src/main.cpp
 
-## New bench preflight: pressure PCB identity unresolved (2026-11-17)
+## Current pressure PCB identified from 2026-11-17 photos
 
-**Do not enable Port B power or flash the enabled two-sensor build yet.** Inspection of the newly uploaded `MonitorHW(4).zip` found the old Eagle `Pressure_Module_v2.1_jan2024.sch`. That design uses an **MP3V5050** pressure transducer, an **MCP3426** ADC (IC2) and a **FOUR-pin** PTSM I2C connector.
+**Confirmed visually:** The actual pressure sensor IC is marked **MPXV5010GP**, and the red PCB's reverse silkscreen reads **SimModule Pressure v2.0.0 Jan 2026**. A small 8-pin IC at designator **IC2** is present on the PCB, consistent with the **MCP3426 ADC** in the repository's documented v2.0 pressure setup. The small IC's actual part marking is not legible in the supplied photo, so confirm its identity by read-only I2C ID/ACK once wiring has been verified. The sensor PCB rear shows **four connector through-hole solder joints**, not five; do not assume each visible colored jumper is an independently connected signal.
 
-The current physical pressure PCB photograph instead shows a part marking starting **MPXV70…** and a **FIVE-wire** connection to the STM32 Port B. This is a **different revision/design**, so the old MCP3426/0x68 data cannot establish the current PCB's electronics. The MPXV70xx *sensor IC* has an analog output; there **may** be an ADC elsewhere on the PCB (including the reverse side). Verify the new PCB backside and any IC2 / MCP3426 markings before assuming I2C.
+**Version-specific caution:** The `MonitorHW(4).zip` pressure schematic `Pressure_Module_v2.1_jan2024.sch` refers to an earlier/different MP3V5050 sensor and four-pin I2C design. It does not by itself establish voltage/pin order for the actual v2.0 Jan 2026 board. The current pressure system was previously bench-tested on the SAMD21 with MCP3426 at **0x68**, config **0x88**, producing raw counts; using STM32 Port B is a new untested wiring configuration.
 
-The current SensorHub v1.1.0b KiCad PCB shows Port B U$59 pads P1=5V, P2=GND, P3=3.3V_OUT1, P4=SCL2, P5=SDA2. **The photographed physical carrier is v1.0.3.** Its Port B P1–P5 assignments and jumper colors were not verified. Do not infer these from the newer revision.
+The new STM32 photo shows a v1.0.3 (Feb 2025) carrier. The separately supplied v1.1.0b PCB maps Port B as **P1=5V, P2=GND, P3=3.3V_OUT1, P4=SCL2, P5=SDA2** and power GPIO **PC8/G3**. This mapping is **not independently verified** on the v1.0.3 carrier; the pressure PCB's **four contacts** also must not be mapped to the carrier's **five contacts** solely by wire colors. Check both mating pin orders and module supply compatibility before applying power. Unpowered continuity verification or correct v1.0.3/v2.0 PCB design data is preferred. Do not bridge 5V to a 3.3V rail or I2C line.
 
-The fifth wire is *consistent with* a sensor needing both 5 V (analog pressure chip) and switched 3.3 V (digital converter), but **that is a hypothesis, not evidence**. A bare MPXV70xx analog output cannot be read as MCP3426 I2C data. Never wire such an analog output directly to an STM32 3.3V-only GPIO without verifying its voltage and the appropriate signal conditioning.
-
-**Already passing:** original STM32 `tof_probe_f405 v0.2`, ToF plugged into Port A upper, valid=1 err=0, raw distances 44–62 mm, roughly 10Hz. Preserve this functional baseline while inspecting the pressure module. Full current MCU flash is backed up in two identical local files.
-
-**First safe test today:** USB power OFF; inspect the current pressure PCB front/reverse for ADC IC markings, labeled pads and wire-to-pin assignments. No software or flash change needed. Then choose either MCP3426 I2C scanner or a properly protected analog ADC input test.
+**Already working on physical STM32:** original `tof_probe_f405 v0.2` with ToF on Port A upper, I2C1 PB7/PB6, PC9 rail control, yielding valid=1, err=0, raw distances 44-62 mm. Keep this firmware and wiring as the functional regression baseline until Port B is verified. Existing STM32 flash was backed up to two equal SHA-256 local copies.
 
 ## Hardware safety: board revision differs
 
