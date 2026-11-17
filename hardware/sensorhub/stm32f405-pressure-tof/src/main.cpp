@@ -2,7 +2,7 @@
 // Pressure MCP3426 logic adapted from hardware/sensorhub/pressure-imu/src/main.cpp.
 // VL6180X driver supplied by OlympusSixtems/KEVIN (see include/vl6180x.h).
 // Photo: RobotPatient SensorHub carrier v1.0.3, NOT the v1.1.0b source schematic.
-// SAFE DEFAULT: no sensor rail toggling and no I2C when KEVIN_SENSOR_IO_ENABLED=0.
+// This live-bench branch explicitly enables both sensors after user wiring confirmation.
 // Raw ADC counts != calibrated pressure; ToF mm != calibrated compression depth.
 
 #include <Arduino.h>
@@ -13,12 +13,16 @@
 #ifndef KEVIN_TOF_IO_ENABLED
 #define KEVIN_TOF_IO_ENABLED 0
 #endif
-// Pressure Port B still needs electrical pin-by-pin verification.
+// Port B pressure I2C is guarded by explicit bench-verified compile-time flags.
 #ifndef KEVIN_PRESSURE_IO_ENABLED
 #define KEVIN_PRESSURE_IO_ENABLED 0
 #endif
-#if KEVIN_PRESSURE_IO_ENABLED && (!defined(KEVIN_CARRIER_V103_PORT_B_VERIFIED) || !defined(KEVIN_PRESSURE_INTERFACE_VERIFIED))
-#error "Verify v1.0.3 Port B pinout, 5V/3.3V lines and pressure module connector BEFORE enabling pressure I2C."
+#if KEVIN_PRESSURE_IO_ENABLED
+  #if !defined(KEVIN_CARRIER_V103_PORT_B_VERIFIED) || !defined(KEVIN_PRESSURE_INTERFACE_VERIFIED)
+    #error "Confirm actual v1.0.3 Port B pinout, pressure PCB supply and I2C logic levels before enabling pressure I2C."
+  #elif (KEVIN_CARRIER_V103_PORT_B_VERIFIED != 1) || (KEVIN_PRESSURE_INTERFACE_VERIFIED != 1)
+    #error "Electrical verification flags must both be explicitly 1 for pressure testing."
+  #endif
 #endif
 
 namespace {
@@ -32,18 +36,19 @@ constexpr uint32_t kTofPeriodMs = 250;
 constexpr uint32_t kTofRetryMs = 2000;
 
 // ToF A-upper PB7/PB6 + PC9 was FUNCTIONALLY verified with the existing firmware.
-// Pressure B PB11/PB10 + PC8 is still v1.1.0b documentation only.
-// Do not wire/enable the pressure rail on v1.0.3 until pinout/voltage verified.
-TwoWire pressureBus(PB11, PB10); // SDA, SCL; Port B / I2C2 assumed; NOT verified on v1.0.3
+// Pressure B PB11/PB10 + PC8: based on v1.1.0b docs, user reports verified
+// mapping on their v1.0.3 carrier. Actual 5V transducer supply and 3.3V
+// I2C pullups MUST be electrically compatible; raw readings uncalibrated.
+TwoWire pressureBus(PB11, PB10); // SDA, SCL; Port B / I2C2; user confirmed wiring
 TwoWire tofBus(PB7, PB6);       // SDA, SCL; Port A upper / I2C1: working on physical board
 vl6180x::Device tof(tofBus);
-constexpr uint32_t kPressureRail = PC8; // tentative: Port B; verify v1.0.3 rail wiring
+constexpr uint32_t kPressureRail = PC8; // Port B switched 3.3V logic/ADC rail
 constexpr uint32_t kTofRail = PC9;      // Port A upper: observed functioning with existing ToF firmware
 
 bool pressurePresent = false, pressurePending = false;
 bool tofReady = false, baselineValid = false, calibrating = false;
 uint32_t adcStarted = 0, lastAdcStarted = 0, lastTof = 0, lastTofAttempt = 0;
-uint32_t lastPressureFault = 0, candidateCount = 0, eventStarted = 0;
+uint32_t lastPressureFault = 0, lastPressureProbe = 0, candidateCount = 0, eventStarted = 0;
 int32_t baseline = 0, calSum = 0, calMin = 32767, calMax = -32768;
 uint16_t calGood = 0, calAttempts = 0;
 enum class EventState : uint8_t { Idle, Positive, Negative };
@@ -56,8 +61,10 @@ bool ping(TwoWire &bus, uint8_t address) {
 }
 void status() {
   Serial.print("# STATUS pressure_ack=");
-  if (kPressureEnabled) Serial.print(ping(pressureBus, kPressureAddr) ? 1 : 0);
-  else Serial.print("DISABLED");
+  if (kPressureEnabled) {
+    pressurePresent = ping(pressureBus, kPressureAddr);
+    Serial.print(pressurePresent ? 1 : 0);
+  } else Serial.print("DISABLED");
   Serial.print(" tof_ack=");
   if (kTofEnabled) Serial.println(ping(tofBus, vl6180x::ADDRESS) ? 1 : 0);
   else Serial.println("DISABLED");
@@ -269,7 +276,7 @@ void setup() {
     Serial.println("# TOF_IO_DISABLED");
   }
 
-  // Port B pressure I2C requires independent physical verification.
+  // Only enable Port B with user-confirmed mapping and suitable supplies.
   if (kPressureEnabled) {
     digitalWrite(kPressureRail, LOW);
     pinMode(kPressureRail, OUTPUT);
@@ -278,6 +285,7 @@ void setup() {
     pressureBus.begin();
     pressureBus.setClock(100000);
     pressurePresent = ping(pressureBus, kPressureAddr);
+    lastPressureProbe = millis();
     Serial.println(pressurePresent ? "# PRESSURE_ADC_PRESENT send z for zero calibration" :
                                      "# PRESSURE_ADC_ABSENT (no data will be reported)");
   } else {
@@ -303,7 +311,15 @@ void loop() {
     if (c == 'h' || c == 'H')
       Serial.println("# Commands: s=address ACKs; z=calibrate pressure; h=help");
   }
-  if (kPressureEnabled) servicePressure(millis());
+  if (kPressureEnabled) {
+    if (!pressurePresent && millis() - lastPressureProbe >= 2000) {
+      lastPressureProbe = millis();
+      pressurePresent = ping(pressureBus, kPressureAddr);
+      if (pressurePresent) Serial.println("# PRESSURE_ADC_RECONNECTED; readings enabled");
+      else Serial.println("# PRESSURE_ADC_ABSENT address 0x68 on I2C2");
+    }
+    servicePressure(millis());
+  }
   if (kTofEnabled) serviceTof(millis()); // may block up to 100 ms
   delay(5);
 }
