@@ -31,7 +31,18 @@ cd .\hardware\sensorhub\samd21-vl6180x-a1
 
 COM3 is the previously observed SAMD21 COM port; re-run `platformio device list` if it has changed. The firmware replaces the previously installed SAMD21 pressure + dual IMU firmware (source remains available in `hardware/sensorhub/pressure-imu/`); this test is easily reversible by reflashing it.
 
-## Example output (not yet observed on physical hardware)
+## Confirmed hardware result — 2026-11-17
+
+User tested the dedicated SAMD21 VL6180X A1 firmware using COM3 at 115200 baud. On pressing `s` in the Serial Monitor, the firmware reported:
+
+```text
+# TOF_A1 address=0x29 ack=1
+# TOF_MODEL_ID value=0xB4 expected=0xB4 identified=1
+```
+
+**Result: PASS** — MCP-free, isolated VL6180X identification on SAMD21 Sensor A1, including I²C address acknowledgement and expected model-ID read. This test did **not** initialize ranging or confirm distance measurements. It does not establish the STM32 pressure module's power or wiring.
+
+## Example output (now observed on physical hardware)
 
 ```text
 # KEVIN SAMD21 TOF VL6180X A1 READ-ONLY ID v0.1
