@@ -1,5 +1,20 @@
 # K.E.V.I.N. — Combined STM32F405 Pressure + VL6180X ToF
 
+## Physical STM32 simultaneous sensor result — 2026-11-17
+
+**Observed from user's real COM9 115200 serial log, NOT simulated:**
+
+- Both sensor streams ran together on the STM32F405. ToF VL6180X on I2C1/Port A upper and MCP3426 pressure ADC on I2C2/Port B.
+- Early status: `# STATUS pressure_ack=0 tof_ack=1`; pressure initially repeatedly absent at 0x68.
+- At about `t_ms=55049` ToF produced valid `raw_mm=159,err=0,valid=1`, then `# PRESSURE_ADC_RECONNECTED; readings enabled`.
+- Subsequent pressure samples: `2505, 2503, 2506, 2506, 2505, 2508, 2508, 2507` raw ADC counts, all `valid=1`, while ToF kept producing both valid and invalid ranging observations. Raw ToF valid examples nearby include 154, 171, 82, 52 and 47 mm.
+- `baseline_adc=` and `delta_adc=` fields were initially blank by design because the `z` zero-calibration had not yet been performed.
+- **Provisional result:** Both sensor I2C interfaces can exchange valid data at once. Reliability at boot is NOT established: pressure ACK absent until ~55 seconds. Pressure response to applied pressure, sensor power quality and calibration have NOT been verified.
+
+**Next physical test:** with no pressure applied, run `s` to check `pressure_ack=1 tof_ack=1` if ADC still responding; then `z` to take 30 resting ADC samples (roughly 8 seconds); expect `# CALIBRATION_OK baseline_adc=...` if stationary and stable. Apply a *gentle* syringe pressure-and-release after calibration and observe `delta_adc` change while ToF continues. If pressure ACK drops or wiring appears loose, stop and turn USB power OFF before touching any connections. Never treat raw counts as clinical pressure/flow/volume.
+
+---
+
 ## LIVE BENCH RUNBOOK — STM32F405, pressure + ToF (2026-11-17)
 
 This **separate test branch** enables both sensors in `platformio.ini`:
