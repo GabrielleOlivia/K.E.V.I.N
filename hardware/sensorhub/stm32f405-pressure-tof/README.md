@@ -1,5 +1,17 @@
 # K.E.V.I.N. — Combined STM32F405 Pressure + VL6180X ToF
 
+## Follow-up reliability failure — pressure ADC dropped offline (2026-11-17)
+
+The second real COM9 serial log (around t_ms=164217–184637) confirms ToF stable with stationary target (~31–40 mm, `err=0,valid=1`) but pressure ADC I2C2 stopped responding (`# PRESSURE_FAULT reason=config_write_nack`, `# STATUS pressure_ack=0 tof_ack=1`, repeated `# PRESSURE_ADC_ABSENT address 0x68 on I2C2`). Both user `z` calibration commands correctly returned `# CALIBRATION_SKIPPED...`, because no valid ADC connection was present; this was NOT a serial command input problem.
+
+**Current evidence:** intermittent pressure connectivity is not solved; do not claim reliable pressure measurements. Candidate causes include loose/poor contact at the Dupont adapter, power sequencing, module supply, SCL/SDA levels or I2C bus behavior. The earlier pressure samples ~2503–2508 prove successful communication *at one moment*, not stability, calibrated pressure or supply correctness.
+
+**Physical next step:** stop Serial Monitor, disconnect USB power, inspect/reseat existing pressure harness without changing verified pin mapping, ensure no loose adjacent wire ends, reapply power and use `s` to check ACK stability. Reconnect or touch *only while power is off*. Do not send `z` until `pressure_ack=1` persists and continuous raw pressure values have resumed. If failure recurs, check 5V sensor supply and 3.3V ADC/I2C rail with measurement equipment or team's verified circuit documentation before further powered testing.
+
+**Code hardening committed but not uploaded:** on pressure configuration NACK, firmware now marks the sensor offline, clears pending conversion, invalidates old baseline, and reuses the 2s reprobe path. This software recovery may reduce repetitive NACK logs but cannot correct an electrical fault. Currently flashed software has NOT been automatically changed by this GitHub commit.
+
+---
+
 ## Physical STM32 simultaneous sensor result — 2026-11-17
 
 **Observed from user's real COM9 115200 serial log, NOT simulated:**
