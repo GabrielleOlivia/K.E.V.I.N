@@ -1,3 +1,15 @@
+# 22 November 2026 — A2 pressure + **physical B1** ToF bench update
+
+**Observed on hardware:** the MCP3426-based pressure ADC on **Sensor A2** (SERCOM1, address `0x68`) and the VL6180X ToF on **physical Sensor B1** (SERCOM2, address `0x29`) acknowledged and produced **interleaved live readings** after the operator reseated the wiring. The ToF model ID was `0xB4`. Raw ADC readings changed during the user's reported blowing test (up to `6541` counts), but are **not calibrated pressure**. A relatively steady hand yielded repeated valid ToF readings near 30–40 mm, but this is not a precision/reference measurement.
+
+**Important limitation:** Two pressure `short_read rx_count=0` / `wire_status=2` faults occurred in the subsequent test and the firmware later reconnected. This is **not a long-term stability pass**. The earlier intermittent disappearance of the ToF until wires were pressed in suggests a possible contact issue, not a proven cause. Do not claim medical or physiological accuracy.
+
+**Firmware provenance:** This branch retains the reviewed source code **unchanged** from `review/samd21-a2-b2-bench`, with `src/main.cpp`, support headers, and `platformio.ini`. The binary's exact hash on the board was not captured. It prints `B2` because that is the code's name for the Sensor B SERCOM2 bus; **the ToF was physically connected to B1**, which shares that bus. The older B2-focused wiring instructions below remain historical reference guidance and are **not** a wiring diagram for the tested B1 setup.
+
+**Full bench record, observed excerpts, commands, limitations, and next tests: [BENCH_PROGRESS_2026-11-22.md](BENCH_PROGRESS_2026-11-22.md).**
+
+---
+
 # SensorHub bench diagnostic · pressure on A2 and ranging on B2
 
 The pressure ADC stopped acknowledging even with the ToF removed. It used to give raw counts near 2500 on A2. The ToF previously returned model ID 0xB4 and valid ranges on **physical A2**. A2+B2 still requires a physical test. Use these instructions with the older ModularSim SAMD21 SensorHub and the two simulator modules.
