@@ -46,7 +46,7 @@ class MonitorApp(tk.Tk):
         self.last_reported_state = ""
         self.log_count = 0
         self.histories = {k: deque([0.0] * 155, maxlen=155)
-                          for k in ("ecg", "pleth", "resp")}
+                          for k in ("ecg", "pleth", "resp", "cpr")}
 
         self.mode = tk.StringVar(value="default")
         self.source = tk.StringVar(value="virtual")
@@ -56,6 +56,7 @@ class MonitorApp(tk.Tk):
         self.head = tk.DoubleVar(value=0.0)
         self.mock_tof = tk.DoubleVar(value=65.0)
         self.auto_breath = tk.BooleanVar(value=True)
+        self.manual_head_fallback = tk.BooleanVar(value=False)
         self.tof_polarity = tk.StringVar(value="closer")
         self.sensor_head = None  # live head angle only when future IMU firmware emits it
         self.scanned = {"A2": set(), "B2": set()}
@@ -156,7 +157,20 @@ class MonitorApp(tk.Tk):
                                ("Status s", "s"), ("Acquire g", "g")):
             self.button(serial_commands, title, lambda c=command: self.serial_command(c)).pack(
                 side="left", expand=True, fill="x", padx=2)
-        self.label(controls, "Live: scan twice cleanly before acquiring;\nnever put the IMU in B1 when using 'g'.", 8).pack(fill="x", pady=2)
+        imu_commands = tk.Frame(controls, bg=PANEL)
+        imu_commands.pack(fill="x", pady=(5, 0))
+        for title, command in (("Start IMU m", "m"), ("Zero tilt z", "z"),
+                               ("Flip tilt f", "f")):
+            self.button(imu_commands, title, lambda c=command: self.serial_command(c)).pack(
+                side="left", expand=True, fill="x", padx=2)
+        self.label(controls, "Real head tilt: enable IMU m before acquire g.\nZero the IMU with head neutral; test physical flexion direction.", 8).pack(fill="x")
+        self.sensor_health = self.label(controls, "LIVE: disconnected", size=9, color=YELLOW)
+        self.sensor_health.pack(fill="x", pady=(7, 0))
+        tk.Checkbutton(controls, text="Allow manual head fallback if IMU absent",
+                       variable=self.manual_head_fallback, bg=PANEL, fg=INK,
+                       activebackground=PANEL, activeforeground=INK,
+                       selectcolor="#214568").pack(anchor="w", pady=(3, 2))
+        self.label(controls, "Fallback is OFF by default: no real head data means no assumed neutral airway.", 8).pack(fill="x")
 
         tk.Frame(controls, height=1, bg="#30435a").pack(fill="x", pady=13)
         self.label(controls, "HEAD IMU (A1) • CHEST ASSUMED LEVEL", 9, INK, True).pack(fill="x")
@@ -238,21 +252,25 @@ class MonitorApp(tk.Tk):
         if self.mode.get() != "reactive" or self.source.get() != "serial":
             self.note("Choose SENSOR-REACTIVE / Real SensorHub first")
             return
-        if command == "g":
+        if command in ("g", "m"):
             if self.good_scans < 2:
                 self.note("Acquire blocked: need two clean scans with A1+A2+B1 present")
                 return
             if not messagebox.askyesno(
-                "Verify the hardware before acquisition",
-                "Have you positively confirmed physical B1 has the VL6180X ToF, "
-                "A1 the IMU, and A2 the pressure ADC?\n\n"
-                "The old firmware's g command performs I²C register reads/writes. "
-                "Do not proceed if B1 contains the IMU, the wiring was modified "
-                "while powered, or the bus has shown anomalous addresses."):
+                "Verify the hardware before starting",
+                "Confirm A1=BHI360 IMU, A2=pressure ADC, B1=VL6180X ToF.\n\n"
+                "The 'm' command uploads Bosch firmware to the BHI360 and "
+                "requires the separately built EXPERIMENTAL live SensorHub image. "
+                "The 'g' command reads/writes pressure and ToF registers.\n\n"
+                "Do not proceed if connections are unverified or the scan "
+                "shows abnormal addresses. Is this setup verified?"):
                 return
         if command == "i":
             # The new scan will be counted only on its complete B-bus SCAN_END.
             pass
+        if command in ("m", "z", "f") and self.good_scans < 2:
+            self.note("IMU control blocked: need two clean scans")
+            return
         if self.serial.send(command):
             self.note(f"Sent v1 command: {command}")
         else:
@@ -323,6 +341,8 @@ class MonitorApp(tk.Tk):
             elif reading.kind == "head_pitch":
                 self.last_imu_wall = time.monotonic()
                 self.sensor_head = float(reading.value)
+            elif reading.kind == "imu_status":
+                self.note(str(reading.value))
             elif reading.kind == "scan_start":
                 bus = str(reading.value)
                 self.scanned[bus] = set()
@@ -354,8 +374,10 @@ class MonitorApp(tk.Tk):
                                            now - self.last_pressure_wall < 2.2 and
                                            self.pressure.ready)
                 settings.tof_valid = self.serial.connected and now - self.last_tof_wall < 2.2
-                settings.head_pitch_deg = (self.sensor_head if self.sensor_head is not None and
-                                           now - self.last_imu_wall < 2.2
+                has_live_head = (self.serial.connected and self.sensor_head is not None
+                                 and now - self.last_imu_wall < 2.2)
+                settings.head_valid = has_live_head or self.manual_head_fallback.get()
+                settings.head_pitch_deg = (float(self.sensor_head) if has_live_head
                                            else float(self.head.get()))
         return settings
 
@@ -389,7 +411,22 @@ class MonitorApp(tk.Tk):
                                 fg=RED if "ARREST" in data["status"] else
                                 YELLOW if data["status"] != "STABLE" else GREEN)
         self.head_display.config(text=f"Head relative pitch: {settings.head_pitch_deg:+.0f}°")
-        self.tof_display.config(text=f"Virtual ToF distance: {float(self.mock_tof.get()):.0f} mm")
+        if settings.source == "serial" and self.serial.connected:
+            tof_text = (f"Real ToF distance: {self.tof.latest_mm:.0f} mm"
+                        if settings.tof_valid and self.tof.latest_mm is not None
+                        else "Real ToF: NO FRESH DATA")
+        else:
+            tof_text = f"Virtual ToF distance: {float(self.mock_tof.get()):.0f} mm"
+        self.tof_display.config(text=tof_text)
+        if settings.source == "serial":
+            fresh_imu = (self.serial.connected and self.sensor_head is not None
+                         and time.monotonic() - self.last_imu_wall < 2.2)
+            head_state = "LIVE" if fresh_imu else ("MANUAL FALLBACK" if self.manual_head_fallback.get() else "NO DATA")
+            pr = (str(self.pressure.latest) if settings.pressure_valid else "NO DATA")
+            tof = (str(self.tof.latest_mm) if settings.tof_valid else "NO DATA")
+            self.sensor_health.config(text=f"A1 head: {head_state}\nA2 pressure ADC: {pr}\nB1 ToF mm: {tof}")
+        else:
+            self.sensor_health.config(text="Virtual input (not measuring hardware)")
         connection = ("CONNECTED" if self.serial.connected else "NOT CONNECTED")
         self.connection_button.config(text="Disconnect" if self.serial.connected else "Connect COM")
         if settings.mode == "default":
@@ -407,9 +444,10 @@ class MonitorApp(tk.Tk):
         canvas.delete("all")
         plot_width = w * 0.71
         canvas.create_line(plot_width, 0, plot_width, h, fill="#24364b", width=2)
-        rows = (("ecg", GREEN, "ECG • synthetic", 0.18, 60),
-                ("pleth", BLUE, "PLETH • synthetic", 0.50, 60),
-                ("resp", YELLOW, "RESP • breath pulses", 0.81, 55))
+        rows = (("ecg", GREEN, "ECG • synthetic", 0.13, 43),
+                ("pleth", BLUE, "PLETH • synthetic", 0.36, 43),
+                ("resp", YELLOW, "RESP • sensor pressure pulses", 0.59, 43),
+                ("cpr", RED, "CPR • ToF detected movements", 0.82, 43))
         for name, color, title, fraction, amplitude in rows:
             baseline = h * fraction + 35
             canvas.create_text(14, baseline - 68, text=title, anchor="nw", fill=MUTED,
