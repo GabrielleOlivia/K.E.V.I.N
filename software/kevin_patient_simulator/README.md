@@ -1,32 +1,41 @@
+# K.E.V.I.N. Live Physical Sensors — desktop simulator v0.2
+
+**What is available now:** This monitor reads real serial frames produced by your already-tested SensorHub pressure and ToF firmware, detects positive pressure pulses as training "breaths", and registers repeated changes in physical B1 ToF distance as **CPR proxy events** (with a separate CPR waveform and rate). Both affect the same simulated patient state, not isolated widgets. The original firmware has **not** been rewritten or overwritten.
+
+**Head IMU is experimental:** The old SensorHub firmware only discovers the BHI360 address; it does NOT publish head pitch. The new separate opt-in `kevin_live_sensors` firmware environment contains an *unbuilt and hardware-untested* Bosch SensorAPI firmware-upload/Euler streaming implementation. See [SensorHub live build and risk notes](../../hardware/sensorhub/samd21-pressure-a2-tof-b2/LIVE_SENSORHUB_SETUP.md). **Do not claim real head-tilt control is working until the Bosch firmware boots and `# imu,head_pitch_deg=...,valid=1` changes when you physically tilt it.**
+
+### Use the real sensors from the desktop GUI
+
+1. Verify the wiring *unpowered*: head IMU on A1, MCP3426 pressure on A2, VL6180X ToF on physical **B1**. Do not hot-plug, and investigate earlier anomalous I²C scans before combined live acquisition.
+2. Install `pyserial` (once): `py -3 -m pip install pyserial`. Close PlatformIO Serial Monitor (`Ctrl+C`) so the GUI can open COM3.
+3. Run `py -3 app.py`, select **SENSOR-REACTIVE** then **Real SensorHub COM3**, click **Connect COM**.
+4. Click **Select c**, then **Scan i** twice. Both scans must show Bus A (`0x15`, `0x29`, `0x68`) and Bus B (`0x29`) and no extra addresses; use **Status s** to confirm ACKs. The app blocks acquisition until two clean scans.
+5. For the new **experimental live SensorHub firmware only**, click **Start IMU m** to upload Bosch firmware, then confirm that live head angles appear. With the head physically neutral, click **Zero tilt z**. Tilt it gently and make sure forward flexion corresponds to *negative* angle values; **Flip tilt f** reverses the sign if required. If the IMU fails, the GUI displays **HEAD IMU SIGNAL UNAVAILABLE**, and does **not** silently assume 0°. You may explicitly choose **Allow manual head fallback** to demonstrate pressure/ToF before IMU orientation works.
+6. Click **Acquire g** only when the actual B1 device is the VL6180X ToF. Leave the pressure port at rest for the first eight valid samples (~1–2 s for the experimental faster firmware, ~2 s with v1); then blow or apply a known safe pressure pulse and watch the event log and simulated respiratory waveform/SpO₂/HR. This detects *positive pressure change*, **not measured airflow**.
+7. Hold your hand stationary in front of the ToF for six valid samples to establish the resting distance. Move toward the ToF by more than the demonstration ~8 mm threshold, then return it to rest. Each approach-and-release can register one **CPR proxy event**, with CPR waveform activity shown in red. If the ToF is mounted so compressions move **away**, choose **Farther** and recalibrate at rest. **This is not calibrated CPR depth or a medical CPR monitor.**
+8. Choose **DEFAULT** to ignore *all* live sensors and show independently generated healthy/emergency scenarios.
+
+### Troubleshooting
+
+- **No COM3**: close PlatformIO monitor; make sure `pyserial` is installed; reconnect USB only when no wires are being moved; use the port shown by `platformio device list`.
+- **Pressure values but no breath**: sensor readings must be `valid=1` and rise above the quiet baseline by the unvalidated threshold of 180 ADC counts. Verify the raw values change when you apply a pulse and keep the port quiet for initial calibration. Very short pulses may be missed by the existing firmware's ~4 Hz sampling.
+- **ToF values but no CPR**: ensure there are six *valid* resting range values; move in the chosen polarity and fully return to the baseline between events. High-speed real CPR is undersampled by existing v1 firmware.
+- **IMU I²C addresses appear but head angle shows NO DATA**: this is normal with old firmware. A matching address is **not** a streaming orientation sensor. Don't flash the experimental firmware without checking its compile result and the hardware connection stability.
+- **Any sensor stops sending data**: the model holds physiology instead of diagnosing apnoea or a normal head position from stale data. The underlying model's rates/angles are illustrative and not clinical thresholds.
+
+---
+
 # K.E.V.I.N. — Interactive Infant Patient Monitor (training simulator v0.1)
 
 **Runnable Windows desktop software** with synthetic ECG, pleth, respiratory waveform, HR, SpO₂, RR, EtCO₂ and blood pressure. It demonstrates *qualitative interactions* between airway, ventilation, oxygenation, heartbeat and CPR. **It is not a clinical model, vital-sign monitor, diagnosis, device calibrator, or medical control system.**
 
-## Start from GitHub — no ZIP file needed (Windows PowerShell)
+## Start in 2 steps (Windows PowerShell)
 
-This simulator lives in the K.E.V.I.N. repository on the `feature/kevin-interactive-patient-simulator-v0.1` branch, under `software/kevin_patient_simulator`. GitHub stores the code, but because this is a **Python/Tkinter desktop program**, it still runs locally on your computer.
-
-If you have not cloned the repo:
+Extract this ZIP. In the extracted `kevin_patient_simulator` directory run:
 
 ```powershell
-cd "$env:USERPROFILE\\Documents"
-git clone --branch feature/kevin-interactive-patient-simulator-v0.1 --single-branch https://github.com/GabrielleOlivia/K.E.V.I.N.git
-cd ".\\K.E.V.I.N\\software\\kevin_patient_simulator"
 py -3 app.py
 ```
-
-If you already have the project in a local Git checkout, use that checkout instead:
-
-```powershell
-git fetch origin
-git switch --track origin/feature/kevin-interactive-patient-simulator-v0.1
-cd software/kevin_patient_simulator
-py -3 app.py
-```
-
-The `git switch --track` command is for the **first** checkout of this branch; on later visits simply use `git switch feature/kevin-interactive-patient-simulator-v0.1`. No ZIP extraction is necessary.
-
-Python 3 with Tkinter is required (Python.org Windows installation generally includes Tkinter); the offline virtual simulation has **no external dependencies**.
 
 Python 3 with Tkinter is required (Python.org Windows installation generally includes Tkinter); the offline virtual simulation has **no external dependencies**.
 
@@ -114,4 +123,4 @@ py -3 -m unittest discover -s tests -v
 
 ## Safety / limitations
 
-The app can send the original SAMD21 firmware's single-character **serial diagnostic commands** (including `c`, `i`, `s`, and `g`) only when the operator explicitly clicks the corresponding control. It does not drive motors, CPR actuators, or medical outputs. Its fake vitals are never real physiological measurements. The source firmware has only been associated with actual bench scans via banner and output, not a verified on-device binary SHA. Treat all numerical thresholds as adjustable educational parameters. Use only with a patient-monitor **training simulator**, never a real infant or patient. Verify electronics independently before physical testing.
+This code never sends commands to the SAMD21 or drives motors, CPR actuators, or medical outputs. Its fake vitals are never real physiological measurements. The source firmware has only been associated with actual bench scans via banner and output, not a verified on-device binary SHA. Treat all numerical thresholds as adjustable educational parameters. Use only with a patient-monitor **training simulator**, never a real infant or patient. Verify electronics independently before physical testing.
