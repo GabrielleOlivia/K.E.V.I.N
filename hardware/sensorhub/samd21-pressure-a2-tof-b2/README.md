@@ -4,6 +4,8 @@
 
 **Do not use `m` with the older v1 firmware.** Follow [IMU_A1_INTEGRATION.md](IMU_A1_INTEGRATION.md): first verify the third address with the already-tested v1 firmware using `c`, `i`, `s`, and only then consider building/flashing this experimental revision to check the IMU identity. The IMU does not yet output orientation or fusion data. The previously tested two-sensor code and bench record remain available on [the preserved baseline branch](https://github.com/GabrielleOlivia/K.E.V.I.N/tree/feature/samd21-a2-pressure-b1-tof-bench-2026-11-22).
 
+> **Additional code review:** the experimental `m` probe now checks both Bosch BHI360 addresses `0x28` and `0x29`. The existing v1 `i` scanner already covers both, so the absent A1 responder in the user's real three-device scan still needs electrical/startup diagnosis. The new code is **uncompiled and untested on hardware**.
+
 ---
 
 # 22 November 2026 — A2 pressure + **physical B1** ToF bench update
