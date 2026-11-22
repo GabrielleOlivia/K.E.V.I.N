@@ -38,6 +38,8 @@ def parse_line(line: str) -> Reading | None:
             return Reading("tof", float(fields["raw_mm"]))
         except (ValueError, KeyError):
             return None
+    if s.startswith("IMU_"):
+        return Reading("imu_status", s)
     if s.startswith("imu,"):
         fields = dict(re.findall(r"([a-z_]+)=([^,\s]+)", s))
         if fields.get("valid", "1") != "1":
@@ -67,7 +69,7 @@ class SerialBridge:
 
     def send(self, command: str) -> bool:
         """Only a single permitted v1 menu character, explicitly user-triggered."""
-        if command not in ("c", "i", "s", "g") or not self.connected or self._port is None:
+        if command not in ("c", "i", "s", "g", "m", "z", "f") or not self.connected or self._port is None:
             return False
         try:
             self._port.write((command + "\n").encode("ascii"))
