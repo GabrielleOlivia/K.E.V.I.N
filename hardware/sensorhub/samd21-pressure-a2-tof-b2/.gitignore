@@ -1,0 +1,6 @@
+lib/BHI360Vendor/
+.pio/
+.vscode/
+logs/
+__pycache__/
+*.py[cod]
