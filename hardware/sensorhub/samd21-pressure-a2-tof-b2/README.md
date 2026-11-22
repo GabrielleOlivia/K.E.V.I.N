@@ -1,3 +1,11 @@
+# Experimental one-IMU extension — A1 BHI360 (22 November 2026)
+
+**Source prepared, NOT built/uploaded/tested on hardware:** this branch adds a **manual `m` read-only BHI360 identity probe** for a single IMU on **physical A1** while preserving pressure on **A2** and the ToF on **physical B1**. A1/A2 share SERCOM1; B1 is SERCOM2. B2 remains unused. The physical A1 socket includes an extra supply contact in the reference design: verify exact board revision, harness and rail voltages before making a connection.
+
+**Do not use `m` with the older v1 firmware.** Follow [IMU_A1_INTEGRATION.md](IMU_A1_INTEGRATION.md): first verify the third address with the already-tested v1 firmware using `c`, `i`, `s`, and only then consider building/flashing this experimental revision to check the IMU identity. The IMU does not yet output orientation or fusion data. The previously tested two-sensor code and bench record remain available on [the preserved baseline branch](https://github.com/GabrielleOlivia/K.E.V.I.N/tree/feature/samd21-a2-pressure-b1-tof-bench-2026-11-22).
+
+---
+
 # 22 November 2026 — A2 pressure + **physical B1** ToF bench update
 
 **Observed on hardware:** the MCP3426-based pressure ADC on **Sensor A2** (SERCOM1, address `0x68`) and the VL6180X ToF on **physical Sensor B1** (SERCOM2, address `0x29`) acknowledged and produced **interleaved live readings** after the operator reseated the wiring. The ToF model ID was `0xB4`. Raw ADC readings changed during the user's reported blowing test (up to `6541` counts), but are **not calibrated pressure**. A relatively steady hand yielded repeated valid ToF readings near 30–40 mm, but this is not a precision/reference measurement.
