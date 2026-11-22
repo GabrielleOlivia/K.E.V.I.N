@@ -14,6 +14,17 @@ constexpr uint8_t kPressureScl = 13; // Feather M0 index for PA17, SERCOM1
 constexpr uint8_t kTofSda = 28;     // Feather M0 index for PA12, SERCOM2
 constexpr uint8_t kTofScl = 39;     // Feather M0 index for PA13, SERCOM2
 constexpr uint8_t kPressureAddr = 0x68;
+// Optional single BHI360 IMU on PHYSICAL A1, sharing Sensor A SERCOM1 with pressure.
+// ToF remains on PHYSICAL B1 (SERCOM2), despite this historical firmware's B2 labels.
+// 0x29 on Sensor A and 0x29 on Sensor B do NOT conflict: they are separate buses.
+constexpr uint8_t kImuA1Addr = 0x29;
+constexpr uint8_t kBhiFuserIdReg = 0x1C;
+constexpr uint8_t kBhiChipIdReg = 0x2B;
+constexpr uint8_t kBhiRevisionReg = 0x1D;
+constexpr uint8_t kBhiBootStatusReg = 0x25;
+constexpr uint8_t kBhiErrorReg = 0x2E;
+constexpr uint8_t kExpectedFuserId = 0x89;
+constexpr uint8_t kExpectedChipId = 0x7A;
 constexpr uint8_t kPressureConfig = 0x88; // MCP3426 CH1 one-shot, 16bit, gain 1
 constexpr uint32_t kPressurePeriodMs = 250;
 constexpr uint32_t kPressureWaitMs = 110;
@@ -47,6 +58,71 @@ bool pinIs(uint8_t index, uint32_t port, uint32_t pin) {
 uint8_t wireStatus(TwoWire &bus, uint8_t address) {
   bus.beginTransmission(address);
   return bus.endTransmission(true);
+}
+
+// Read only BHI360 register values. Writing a register *index* is required by
+// its I2C read protocol; this does NOT reset, configure, or upload firmware.
+bool readBhiRegA1(uint8_t reg, uint8_t &value) {
+  pressureBus.beginTransmission(kImuA1Addr);
+  if (pressureBus.write(reg) != 1 || pressureBus.endTransmission(false) != 0) return false;
+  const uint8_t received = pressureBus.requestFrom(
+      kImuA1Addr, static_cast<uint8_t>(1), static_cast<uint8_t>(true));
+  if (received != 1 || !pressureBus.available()) {
+    while (pressureBus.available()) pressureBus.read();
+    return false;
+  }
+  value = static_cast<uint8_t>(pressureBus.read());
+  return true;
+}
+
+// Explicit, operator-triggered discovery only (command m); no BHI firmware
+// boot/download until the separate historical IMU startup issue is resolved.
+// Do not assume ANY motion/quaternion data merely because these IDs match.
+void probeImuA1() {
+  if (!usePressure) {
+    Serial.println("# IMU_A1_BUS_A_NOT_SELECTED choose a or c after a cold reset");
+    return;
+  }
+  const uint8_t ack = wireStatus(pressureBus, kImuA1Addr);
+  Serial.print("# IMU_A1_ACK bus=A1_shared_A2 address=0x29 wire_status=");
+  Serial.print(ack);
+  Serial.print(" ack=");
+  Serial.println(ack == 0 ? 1 : 0);
+  if (ack != 0) return;
+
+  uint8_t fuser = 0, chip = 0;
+  if (!readBhiRegA1(kBhiFuserIdReg, fuser) ||
+      !readBhiRegA1(kBhiChipIdReg, chip)) {
+    Serial.println("# IMU_A1_ID_READ_FAILED motion=UNAVAILABLE");
+    return;
+  }
+  const bool valid = fuser == kExpectedFuserId && chip == kExpectedChipId;
+  Serial.print("# IMU_A1_ID fuser=0x");
+  Serial.print(fuser, HEX);
+  Serial.print(" chip=0x");
+  Serial.print(chip, HEX);
+  Serial.print(" identified=");
+  Serial.print(valid ? 1 : 0);
+  Serial.println(" motion=UNAVAILABLE");
+  if (!valid) {
+    Serial.println("# IMU_A1_UNKNOWN_RESPONDER no further register reads");
+    return;
+  }
+
+  uint8_t revision = 0, boot = 0, error = 0;
+  if (readBhiRegA1(kBhiRevisionReg, revision) &&
+      readBhiRegA1(kBhiBootStatusReg, boot) &&
+      readBhiRegA1(kBhiErrorReg, error)) {
+    Serial.print("# IMU_A1_HEALTH revision=0x");
+    Serial.print(revision, HEX);
+    Serial.print(" boot=0x");
+    Serial.print(boot, HEX);
+    Serial.print(" error=0x");
+    Serial.println(error, HEX);
+  } else {
+    Serial.println("# IMU_A1_HEALTH_READ_FAILED");
+  }
+  Serial.println("# IMU_A1_NO_FIRMWARE_UPLOAD orientation=UNAVAILABLE");
 }
 
 void scanBus(TwoWire &bus, const char *name) {
@@ -222,7 +298,9 @@ void serviceTof(uint32_t now) {
 void help() {
   Serial.println("# KEVIN SAMD21 A2+B2 review v1");
   Serial.println("# a=A2 only, b=B2 only, c=both; select once per cold setup");
-  Serial.println("# s=target ACK/status, i=address scan, g=acquire, p=pause/resume, h=help");
+  Serial.println("# s=target ACK/status, i=address scan, m=read-only BHI360 A1 ID");
+  Serial.println("# g=pressure/ToF acquisition, p=pause/resume, h=help; IMU orientation NOT ENABLED");
+  Serial.println("# Logical label B2 refers to the B bus; physical ToF was tested on B1");
 }
 
 bool linesReleased(uint8_t sda, uint8_t scl, const char *name) {
@@ -308,6 +386,7 @@ void loop() {
   else if (c == 'h' || c == '?') help();
   else if (c && !usePressure && !useTof) Serial.println("# Select a, b or c first");
   else if (c == 's') status();
+  else if (c == 'm') probeImuA1();
   else if (c == 'i') {
     if (usePressure) scanBus(pressureBus, "A2");
     if (useTof) scanBus(tofBus, "B2");
