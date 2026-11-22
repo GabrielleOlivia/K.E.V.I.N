@@ -4,6 +4,8 @@
 
 This continues the **hardware-tested** [two-sensor baseline](BENCH_PROGRESS_2026-11-22.md) and adds a **manual, read-only** identity command for a single BHI360 IMU. It does **not** initialize BHI360 motion streams or produce acceleration, gyroscope, magnetic, fusion, quaternion or neck-angle values. Those features remain future work because the earlier Bosch firmware-boot experiments experienced a startup/crash problem.
 
+> **Code review correction (22 Nov):** Bosch's BHI360 host I²C address is **0x28 with HSDO low** or **0x29 with HSDO high**. The tested v1 `i` scanner already checks both addresses: the user's actual Bus A scan found only `0x68` (pressure) with all three boards connected. The LED lighting up is not an I²C ACK. The *experimental* `m` command now checks both `0x28` and `0x29`, refuses to read IDs if both ACK (ambiguous), and attempts identification only for a unique ACK. **This is a software diagnostic enhancement, not a fix for the missing IMU ACK.** The experimental branch remains unbuilt and untested. Do not flash it merely to make an absent address appear.
+
 ## Physical topology
 
 | Physical socket | Module | I2C | Address | Tested state |
