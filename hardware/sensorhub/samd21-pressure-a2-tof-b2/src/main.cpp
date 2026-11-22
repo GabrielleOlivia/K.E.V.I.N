@@ -64,7 +64,9 @@ uint8_t wireStatus(TwoWire &bus, uint8_t address) {
 // its I2C read protocol; this does NOT reset, configure, or upload firmware.
 bool readBhiRegA1(uint8_t reg, uint8_t &value) {
   pressureBus.beginTransmission(kImuA1Addr);
-  if (pressureBus.write(reg) != 1 || pressureBus.endTransmission(false) != 0) return false;
+  const bool registerSent = pressureBus.write(reg) == 1;
+  const uint8_t txStatus = pressureBus.endTransmission(false);
+  if (!registerSent || txStatus != 0) return false;
   const uint8_t received = pressureBus.requestFrom(
       kImuA1Addr, static_cast<uint8_t>(1), static_cast<uint8_t>(true));
   if (received != 1 || !pressureBus.available()) {
@@ -296,7 +298,7 @@ void serviceTof(uint32_t now) {
   Serial.println(range.errorCode == 0 && range.mm != 0xFF ? 1 : 0);
 }
 void help() {
-  Serial.println("# KEVIN SAMD21 A2+B2 review v1");
+  Serial.println("# KEVIN SAMD21 A2-pressure B1-ToF A1-BHI360-probe v2 (UNTESTED)");
   Serial.println("# a=A2 only, b=B2 only, c=both; select once per cold setup");
   Serial.println("# s=target ACK/status, i=address scan, m=read-only BHI360 A1 ID");
   Serial.println("# g=pressure/ToF acquisition, p=pause/resume, h=help; IMU orientation NOT ENABLED");
