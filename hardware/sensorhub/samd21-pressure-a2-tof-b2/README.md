@@ -1,3 +1,11 @@
+# 23 November 2026 — **three physical modules detected in one I²C scan**
+
+**Checkpoint:** With the BHI360/BMM350 9DoF board on physical **A1**, the MCP3426 pressure module on **A2**, and the VL6180X ToF on physical **B1**, a real SAMD21 COM3 scan reported `0x15` + `0x29` + `0x68` on **Sensor A**, and `0x29` on **Sensor B**, with successful pressure/ToF address ACK before and after the scan.
+
+**Evidence and safe reproduction: [THREE_MODULE_I2C_CHECKPOINT_2026-11-23.md](THREE_MODULE_I2C_CHECKPOINT_2026-11-23.md).** This checkpoint preserves the *same source code*, unchanged, that matches the `# KEVIN SAMD21 A2+B2 review v1` banner. Its historical label `B2` means the shared Sensor B bus, **not physical port B2**. The IMU was only address-detected, **not initialized or measured**. There were earlier anomalous/missing ACKs, so reliability is not yet established; no pressure/ToF acquisition with all three connected is shown in this latest log. See the linked record for exact evidence and limitations.
+
+---
+
 # 22 November 2026 — A2 pressure + **physical B1** ToF bench update
 
 **Observed on hardware:** the MCP3426-based pressure ADC on **Sensor A2** (SERCOM1, address `0x68`) and the VL6180X ToF on **physical Sensor B1** (SERCOM2, address `0x29`) acknowledged and produced **interleaved live readings** after the operator reseated the wiring. The ToF model ID was `0xB4`. Raw ADC readings changed during the user's reported blowing test (up to `6541` counts), but are **not calibrated pressure**. A relatively steady hand yielded repeated valid ToF readings near 30–40 mm, but this is not a precision/reference measurement.
