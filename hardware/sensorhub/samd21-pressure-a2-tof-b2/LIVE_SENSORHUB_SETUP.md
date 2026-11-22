@@ -13,7 +13,7 @@ Physical sensor and logical connections:
 | **B1** | ST VL6180X ToF | SERCOM2 PA12/PA13 | `0x29` |
 | B2 | Not connected/soldered | SERCOM2 | — |
 
-The legacy firmware prints `bus=A2` for all of **Sensor A**, and `bus=B2` for all of **Sensor B**. Those output labels do **not** mean physical B2. The chest reference is **assumed stationary and horizontal**; only one IMU is installed, on the head. The relative pitch sign and reference are **not universal**: first neutralize with `z`, observe known head flexion, then reverse the sign with `f` if necessary. **No universal head angle reliably diagnoses an obstructed infant airway.** The software uses demonstration bands, not medically validated thresholds.
+The legacy firmware prints `bus=A2` for all of **Sensor A**, and `bus=B2` for all of **Sensor B**. Those output labels do **not** mean physical B2. The chest reference is **assumed stationary and horizontal**; only one IMU is installed, on the head. The relative pitch sign and reference are **not universal**: first neutralize with `z`, observe known head flexion, then reverse the sign with `f` if necessary. If the IMU is mounted sideways, use `j` to select roll instead of pitch, then `z` again. **No universal head angle reliably diagnoses an obstructed infant airway.** The software uses demonstration bands, not medically validated thresholds.
 
 ## Firmware files, provenance and dependencies
 
@@ -62,11 +62,11 @@ Start with *all three modules connected* and the board cold-restarted. In Platfo
 3. `i` — scan again; **both scans** must have only those expected addresses.
 4. `s` — status; pressure and ToF ACK 1.
 5. `m` — **experimental Bosch BHI360 firmware upload and Euler stream startup**. Wait for `# IMU_READY...`, then `# imu,head_pitch_deg=...,valid=1`. This involves soft-resetting and loading on-chip BHI360 firmware, **not** reflashing the SAMD21 itself. It may fail until the Bosch library and board connection issues are resolved. Do not claim it is active merely from an `IMU_READY` message; verify several angle frames change with movement.
-6. Hold the head in its intended neutral reference and issue `z` to zero the displayed relative pitch. Move it gently in a known flexion direction. If flexion causes a *positive* value while the simulation convention expects *negative*, enter `f` once to reverse the sign.
+6. Hold the head in its intended neutral reference and issue `z` to zero the displayed relative pitch. Move it gently in a known flexion direction. If flexion causes a *positive* value while the simulation convention expects *negative*, enter `f` once to reverse the sign. If physical flexion rotates the sensor's **roll** axis rather than pitch, enter `j` to select roll, then re-zero with `z`.
 7. Only after the IMU has been verified and the physical **B1 is confirmed to contain the ToF**, issue `g` to start the pressure ADC and ToF distance acquisition.
 8. Close PlatformIO Serial Monitor with `Ctrl+C`, launch the Python app, and use the app's buttons to repeat the stage after a USB reset. **COM3 cannot be held by both programs simultaneously.**
 
-The app has manual controls for `c / i / s / m / z / f / g` and prevents starting `m` or `g` until two clean scans. **The scan requirement is a software check, not sufficient proof of safe wiring or calibration.** Only select Real SensorHub COM3 in SENSOR-REACTIVE mode. Default mode deliberately ignores hardware.
+The app has manual controls for `c / i / s / m / z / f / j / g` and prevents starting `m` or `g` until two clean scans. **The scan requirement is a software check, not sufficient proof of safe wiring or calibration.** Only select Real SensorHub COM3 in SENSOR-REACTIVE mode. Default mode deliberately ignores hardware.
 
 ## Live physical interactions
 
