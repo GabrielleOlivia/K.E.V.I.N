@@ -50,6 +50,7 @@ bool imuStarted = false;
 bool imuHavePitch = false;
 float imuNativePitch = 0;
 float imuPitchZero = 0;
+bool imuUseRoll = false; // mounted IMU may be rotated; 'j' selects pitch vs roll axis
 int8_t imuPitchSign = 1;  // reverse with 'f' after comparing known physical flexion
 uint32_t imuLastSample = 0;
 uint32_t imuLastPoll = 0;
@@ -97,7 +98,7 @@ static void imuEulerCallback(const bhi360_fifo_parse_data_info *frame, void *) {
   if (!frame || frame->data_size != 7 || !frame->data_ptr) return;
   bhi360_event_data_orientation e = {};
   bhi360_event_data_parse_orientation(frame->data_ptr, &e);
-  const float nativePitch = e.pitch * (360.0f / 32768.0f);
+  const float nativePitch = (imuUseRoll ? e.roll : e.pitch) * (360.0f / 32768.0f);
   if (!isfinite(nativePitch)) return;
   if (!imuHavePitch) {
     imuPitchZero = nativePitch; // initial neutral reference (must be verified)
@@ -109,7 +110,9 @@ static void imuEulerCallback(const bhi360_fifo_parse_data_info *frame, void *) {
   const float relative = wrapPitch(nativePitch - imuPitchZero) * imuPitchSign;
   Serial.print("# imu,head_pitch_deg=");
   Serial.print(relative, 2);
-  Serial.print(",valid=1,source=bhi360,raw_pitch_deg=");
+  Serial.print(",valid=1,source=bhi360,axis=");
+  Serial.print(imuUseRoll ? "roll" : "pitch");
+  Serial.print(",raw_axis_deg=");
   Serial.println(nativePitch, 2);
 }
 static void imuFailure(const char *stage, int error) {
@@ -223,6 +226,13 @@ static void imuFlip() {
   imuPitchSign = -imuPitchSign;
   Serial.print("# IMU_SIGN=");
   Serial.println(imuPitchSign);
+}
+static void imuAxis() {
+  imuUseRoll = !imuUseRoll;
+  imuHavePitch = false; // next genuine sample sets a new zero; verify mounting
+  Serial.print("# IMU_AXIS=");
+  Serial.print(imuUseRoll ? "roll" : "pitch");
+  Serial.println(" auto_zero_next_sample=1; verify neutral and press z");
 }
 
 
@@ -414,7 +424,7 @@ void serviceTof(uint32_t now) {
 void help() {
   Serial.println("# KEVIN SAMD21 A2+B2 review v1");
   Serial.println("# a=A2 only, b=B2 only, c=both; select once per cold setup");
-  Serial.println("# s=target ACK/status, i=scan, m=start BHI360 EXPERIMENTAL, z=zero tilt, f=flip tilt sign");
+  Serial.println("# s=status, i=scan, m=start BHI360 EXPERIMENTAL, z=zero tilt, f=flip sign, j=axis pitch/roll");
   Serial.println("# g=pressure/ToF acquire, p=pause, h=help; physical ports A1 IMU A2 pressure B1 ToF");
 }
 
@@ -504,6 +514,7 @@ void loop() {
   else if (c == 'm') startImu();
   else if (c == 'z') imuZero();
   else if (c == 'f') imuFlip();
+  else if (c == 'j') imuAxis();
   else if (c == 'i') {
     if (usePressure) scanBus(pressureBus, "A2");
     if (useTof) scanBus(tofBus, "B2");
