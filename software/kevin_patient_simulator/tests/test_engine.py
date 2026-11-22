@@ -24,6 +24,24 @@ class EngineTests(unittest.TestCase):
         self.assertLess(e.spo2, 98)
         self.assertEqual(e.display()["rr"], 0)
 
+    def test_missing_imu_does_not_silently_assume_head_neutral(self):
+        e = PatientEngine()
+        for _ in range(100):
+            e.step(.1, Settings(mode="reactive", pressure_valid=True, head_valid=False))
+        self.assertEqual(e.spo2, 98)
+        self.assertIn("HEAD IMU", e.status)
+
+    def test_cpr_renders_sensor_event_pulse(self):
+        e = PatientEngine()
+        e.compression()
+        e.step(.05, Settings(mode="reactive"))
+        self.assertGreater(e.sample_wave("cpr"), 0.5)
+
+    def test_imu_status_parsing(self):
+        self.assertEqual(parse_line("# IMU_READY firmware_booted=1 kernel=123").kind, "imu_status")
+        self.assertEqual(parse_line("# imu,head_pitch_deg=-31.5,valid=1,source=bhi360").value, -31.5)
+        self.assertIsNone(parse_line("# imu,valid=0,status=waiting_or_stale"))
+
     def test_sensor_disconnected_is_not_apnea(self):
         e = PatientEngine()
         for _ in range(500):
@@ -80,3 +98,4 @@ class EngineTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
