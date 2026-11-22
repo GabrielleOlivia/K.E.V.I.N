@@ -1,7 +1,10 @@
-// K.E.V.I.N.: independent I2C buses, SAMD21 Sensor A2 pressure + Sensor B2 VL6180X.
+// K.E.V.I.N.: two I2C buses on the SAMD21, with 3 physical modules.
+// Sensor A (SERCOM1): pressure MCP3426 0x68 on A2 and one optional
+// BHI360 at 0x28/0x29 on A1; Sensor B (SERCOM2): VL6180X 0x29 on B1.
+// Historical diagnostic output still labels Sensor B as "B2" (bus name only).
+// IMU probe is manual, read-only identity/status, not motion/firmware boot.
 // Bench diagnostics only: ADC counts are NOT calibrated pressure; mm are raw ToF distances.
-// Wiring changes only with USB disconnected. Pressure MCP3426 0x68 on SERCOM1,
-// VL6180X 0x29 on SERCOM2. No IMUs connected.
+// Change wiring only with ALL supplies disconnected.
 #include <Arduino.h>
 #include <Wire.h>
 #include "wiring_private.h"
