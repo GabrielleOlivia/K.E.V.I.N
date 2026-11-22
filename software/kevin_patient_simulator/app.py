@@ -160,7 +160,7 @@ class MonitorApp(tk.Tk):
         imu_commands = tk.Frame(controls, bg=PANEL)
         imu_commands.pack(fill="x", pady=(5, 0))
         for title, command in (("Start IMU m", "m"), ("Zero tilt z", "z"),
-                               ("Flip tilt f", "f")):
+                               ("Flip tilt f", "f"), ("Axis j", "j")):
             self.button(imu_commands, title, lambda c=command: self.serial_command(c)).pack(
                 side="left", expand=True, fill="x", padx=2)
         self.label(controls, "Real head tilt: enable IMU m before acquire g.\nZero the IMU with head neutral; test physical flexion direction.", 8).pack(fill="x")
@@ -268,7 +268,7 @@ class MonitorApp(tk.Tk):
         if command == "i":
             # The new scan will be counted only on its complete B-bus SCAN_END.
             pass
-        if command in ("m", "z", "f") and self.good_scans < 2:
+        if command in ("m", "z", "f", "j") and self.good_scans < 2:
             self.note("IMU control blocked: need two clean scans")
             return
         if self.serial.send(command):
