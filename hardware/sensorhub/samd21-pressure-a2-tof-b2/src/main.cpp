@@ -17,7 +17,10 @@ constexpr uint8_t kPressureAddr = 0x68;
 // Optional single BHI360 IMU on PHYSICAL A1, sharing Sensor A SERCOM1 with pressure.
 // ToF remains on PHYSICAL B1 (SERCOM2), despite this historical firmware's B2 labels.
 // 0x29 on Sensor A and 0x29 on Sensor B do NOT conflict: they are separate buses.
-constexpr uint8_t kImuA1Addr = 0x29;
+// BHI360 supports 0x28 (HSDO low) and 0x29 (HSDO high). Select only
+// after an explicit read-only address check; do not assume the board strap.
+constexpr uint8_t kImuA1AddrLow = 0x28;
+constexpr uint8_t kImuA1AddrHigh = 0x29;
 constexpr uint8_t kBhiFuserIdReg = 0x1C;
 constexpr uint8_t kBhiChipIdReg = 0x2B;
 constexpr uint8_t kBhiRevisionReg = 0x1D;
@@ -62,13 +65,13 @@ uint8_t wireStatus(TwoWire &bus, uint8_t address) {
 
 // Read only BHI360 register values. Writing a register *index* is required by
 // its I2C read protocol; this does NOT reset, configure, or upload firmware.
-bool readBhiRegA1(uint8_t reg, uint8_t &value) {
-  pressureBus.beginTransmission(kImuA1Addr);
+bool readBhiRegA1(uint8_t address, uint8_t reg, uint8_t &value) {
+  pressureBus.beginTransmission(address);
   const bool registerSent = pressureBus.write(reg) == 1;
   const uint8_t txStatus = pressureBus.endTransmission(false);
   if (!registerSent || txStatus != 0) return false;
   const uint8_t received = pressureBus.requestFrom(
-      kImuA1Addr, static_cast<uint8_t>(1), static_cast<uint8_t>(true));
+      address, static_cast<uint8_t>(1), static_cast<uint8_t>(true));
   if (received != 1 || !pressureBus.available()) {
     while (pressureBus.available()) pressureBus.read();
     return false;
@@ -85,16 +88,26 @@ void probeImuA1() {
     Serial.println("# IMU_A1_BUS_A_NOT_SELECTED choose a or c after a cold reset");
     return;
   }
-  const uint8_t ack = wireStatus(pressureBus, kImuA1Addr);
-  Serial.print("# IMU_A1_ACK bus=A1_shared_A2 address=0x29 wire_status=");
-  Serial.print(ack);
-  Serial.print(" ack=");
-  Serial.println(ack == 0 ? 1 : 0);
-  if (ack != 0) return;
-
+  const uint8_t code28 = wireStatus(pressureBus, kImuA1AddrLow);
+  const uint8_t code29 = wireStatus(pressureBus, kImuA1AddrHigh);
+  Serial.print("# IMU_A1_ADDR_CHECK bus=A_shared_A1_A2 address=0x28 wire_status=");
+  Serial.print(code28);
+  Serial.print(" address=0x29 wire_status=");
+  Serial.println(code29);
+  if (code28 == 0 && code29 == 0) {
+    Serial.println("# IMU_A1_AMBIGUOUS both addresses ACK; STOP ID probe");
+    return;
+  }
+  if (code28 != 0 && code29 != 0) {
+    Serial.println("# IMU_A1_ABSENT neither 0x28 nor 0x29 acknowledges");
+    return;
+  }
+  const uint8_t address = code28 == 0 ? kImuA1AddrLow : kImuA1AddrHigh;
+  Serial.print("# IMU_A1_CANDIDATE address=0x");
+  Serial.println(address, HEX);
   uint8_t fuser = 0, chip = 0;
-  if (!readBhiRegA1(kBhiFuserIdReg, fuser) ||
-      !readBhiRegA1(kBhiChipIdReg, chip)) {
+  if (!readBhiRegA1(address, kBhiFuserIdReg, fuser) ||
+      !readBhiRegA1(address, kBhiChipIdReg, chip)) {
     Serial.println("# IMU_A1_ID_READ_FAILED motion=UNAVAILABLE");
     return;
   }
@@ -112,9 +125,9 @@ void probeImuA1() {
   }
 
   uint8_t revision = 0, boot = 0, error = 0;
-  if (readBhiRegA1(kBhiRevisionReg, revision) &&
-      readBhiRegA1(kBhiBootStatusReg, boot) &&
-      readBhiRegA1(kBhiErrorReg, error)) {
+  if (readBhiRegA1(address, kBhiRevisionReg, revision) &&
+      readBhiRegA1(address, kBhiBootStatusReg, boot) &&
+      readBhiRegA1(address, kBhiErrorReg, error)) {
     Serial.print("# IMU_A1_HEALTH revision=0x");
     Serial.print(revision, HEX);
     Serial.print(" boot=0x");
@@ -300,7 +313,7 @@ void serviceTof(uint32_t now) {
 void help() {
   Serial.println("# KEVIN SAMD21 A2-pressure B1-ToF A1-BHI360-probe v2 (UNTESTED)");
   Serial.println("# a=A2 only, b=B2 only, c=both; select once per cold setup");
-  Serial.println("# s=target ACK/status, i=address scan, m=read-only BHI360 A1 ID");
+  Serial.println("# s=target ACK/status, i=address scan, m=read-only BHI360 A1 ID (0x28/0x29)");
   Serial.println("# g=pressure/ToF acquisition, p=pause/resume, h=help; IMU orientation NOT ENABLED");
   Serial.println("# Logical label B2 refers to the B bus; physical ToF was tested on B1");
 }
