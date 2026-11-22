@@ -57,7 +57,7 @@ Interleaved raw frames, recorded with both devices connected:
 Hand held near ToF, alongside near-baseline pressure values (second log):
 
 ```text
-# pressure,t_ms=38907,raw_adc=2500,valid=1,pressure_calibrated=0
+# pressure,t_ms=39007,raw_adc=2500,valid=1,pressure_calibrated=0
 # tof,t_ms=39155,raw_mm=32,err=0,valid=1
 # pressure,t_ms=39257,raw_adc=2501,valid=1,pressure_calibrated=0
 # tof,t_ms=39406,raw_mm=33,err=0,valid=1
