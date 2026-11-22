@@ -78,6 +78,33 @@ class EngineTests(unittest.TestCase):
         d.feed(40, 1.5)
         self.assertTrue(d.feed(28, 1.8))
 
+    def test_live_pressure_and_tof_events_feed_same_patient(self):
+        model = PatientEngine()
+        pressure = PressureBreathDetector(180)
+        tof = ToFCompressionDetector(8)
+        for idx in range(8):
+            pressure.feed(2500)
+            tof.feed(50, idx * .10)
+        # A pressure pulse received while the head is flexed is less effective
+        # than the same pulse with a neutral head.
+        self.assertTrue(pressure.feed(3200))
+        model.breath()
+        self.assertTrue(tof.feed(34, 1.0))
+        model.compression()
+        model.step(0.1, Settings(mode="reactive", head_pitch_deg=-55,
+                                  head_valid=True, pressure_valid=True, tof_valid=True))
+        self.assertLess(model.airway, .55)
+        self.assertGreater(model.sample_wave("cpr"), 0)
+        self.assertGreater(model.time, 0)
+
+    def test_negative_pressure_does_not_count_as_delivered_breath(self):
+        pressure = PressureBreathDetector(threshold=180)
+        for _ in range(9):
+            pressure.feed(2500)
+        self.assertFalse(pressure.feed(2000))
+        pressure.feed(2500)
+        self.assertTrue(pressure.feed(2800))
+
     def test_v1_serial(self):
         p = parse_line("# pressure,t_ms=123,raw_adc=6541,valid=1,pressure_calibrated=0")
         t = parse_line("# tof,t_ms=124,raw_mm=36,err=0,valid=1")
