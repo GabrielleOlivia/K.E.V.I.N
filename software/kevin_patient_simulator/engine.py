@@ -23,6 +23,7 @@ class Settings:
     head_pitch_deg: float = 0.0   # chest is ASSUMED level at 0°
     pressure_valid: bool = True  # False = sensor unavailable; NOT apnoea
     tof_valid: bool = True
+    head_valid: bool = True  # False = IMU pitch stale; NEVER assume neutral
     speed: float = 1.0
 
 
@@ -48,7 +49,9 @@ class PressureBreathDetector:
                 self.baseline = median(self.samples)
                 self.ready = True
             return False
-        amplitude = abs(raw - self.baseline)
+        # On the tested module the ADC increases for an applied breath pulse.
+        # Do not treat negative-going suction as delivered positive pressure.
+        amplitude = raw - self.baseline
         if amplitude < self.threshold * 0.35:
             self.baseline = self.baseline * 0.997 + raw * 0.003
         if not self.latched and amplitude >= self.threshold:
@@ -165,6 +168,10 @@ class PatientEngine:
     def step(self, dt: float, settings: Settings):
         dt = clamp(dt, 0, 0.3) * clamp(settings.speed, 0.2, 8)
         self.time += dt
+        if settings.mode == "reactive" and not settings.head_valid:
+            self.status = "HEAD IMU SIGNAL UNAVAILABLE • physiology held"
+            self.ventilating = False
+            return
         self.head_pitch = settings.head_pitch_deg if settings.mode == "reactive" else 0.0
         self.airway = self._airway_fraction(self.head_pitch)
         if settings.scenario == "Choking":
@@ -290,4 +297,7 @@ class PatientEngine:
             if age < 0 or age > 2.0 or not self.ventilating:
                 return 0.0
             return (1 - exp(-max(0.0, age) * 4)) * exp(-1.45 * max(0, age)) * self.airway
+        if name == "cpr":
+            # Short synthetic pulse drawn only after a real/virtual ToF event.
+            return (exp(-((age_cpr - 0.05) / 0.07) ** 2) if 0 <= age_cpr < 0.4 else 0.0)
         return 0.0
