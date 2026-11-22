@@ -185,7 +185,7 @@ static void startImu() {
     Serial.println("# IMU_FAULT orientation virtual sensor unavailable in firmware"); return;
   }
   bhi360_virtual_sensor_conf_param_conf cfg = {};
-  cfg.sample_rate = BHI360_ODR_10_HZ;
+  cfg.sample_rate = 10.0f;
   cfg.latency = 0;
   rc = bhi360_virtual_sensor_conf_param_set_cfg(
       BHI360_SENSOR_ID_ORI_WU, &cfg, &imuDevice);
