@@ -359,21 +359,40 @@ class MonitorApp(tk.Tk):
                 break
             if reading.kind == "connection":
                 self.note(str(reading.value))
+                if "Connected to" not in str(reading.value):
+                    self.tilt = TiltPair()
+                    self.imus_ready = set()
+                    self.good_scans = 0
             elif reading.kind == "pressure":
                 self.last_pressure_wall = time.monotonic()
                 if self.pressure.feed(int(reading.value)):
                     self.model.breath()
-                    self.note("Real pressure pulse: A2")
+                    self.note("Real A2 pressure pulse")
             elif reading.kind == "tof":
                 self.last_tof_wall = time.monotonic()
                 if self.tof.feed(float(reading.value), self.model.time):
                     self.model.compression()
-                    self.note("Real ToF displacement: B1")
+                    self.note("Real B1 ToF displacement")
+            elif reading.kind in ("head_accel", "chest_accel"):
+                role = reading.kind.split("_")[0]
+                self.tilt.update(role, reading.value, time.monotonic())
             elif reading.kind == "head_pitch":
-                self.last_imu_wall = time.monotonic()
+                # Ignore obsolete single-IMU pitch in strict four-sensor mode.
                 self.sensor_head = float(reading.value)
             elif reading.kind == "imu_status":
-                self.note(str(reading.value))
+                msg = str(reading.value)
+                if msg.startswith("IMU_READY role="):
+                    role = msg.split("role=", 1)[1].split()[0]
+                    if role in ("head", "chest"):
+                        self.imus_ready.add(role)
+                if msg.startswith(("IMU_FAULT role=", "IMU_STALE role=")):
+                    role = msg.split("role=", 1)[1].split()[0]
+                    self.tilt.discard(role)
+                    self.imus_ready.discard(role)
+                if "IMU_START_ABORTED" in msg:
+                    self.tilt = TiltPair()
+                    self.imus_ready.clear()
+                self.note(msg)
             elif reading.kind == "scan_start":
                 bus = str(reading.value)
                 self.scanned[bus] = set()
@@ -384,7 +403,7 @@ class MonitorApp(tk.Tk):
                 bus = str(reading.value)
                 if bus == "B2":
                     expected = (self.scanned["A2"] == {0x15, 0x29, 0x68}
-                                and self.scanned["B2"] == {0x29})
+                                and self.scanned["B2"] == {0x14, 0x28, 0x29})
                     self.good_scans = self.good_scans + 1 if expected else 0
                     self.note(f"I2C scan: A={sorted(self.scanned['A2'])}, "
                               f"B={sorted(self.scanned['B2'])}; "
