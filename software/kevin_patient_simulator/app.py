@@ -423,12 +423,15 @@ class MonitorApp(tk.Tk):
                 settings.pressure_valid = (self.serial.connected and
                                            now - self.last_pressure_wall < 2.2 and
                                            self.pressure.ready)
-                settings.tof_valid = self.serial.connected and now - self.last_tof_wall < 2.2
-                has_live_head = (self.serial.connected and self.sensor_head is not None
-                                 and now - self.last_imu_wall < 2.2)
-                settings.head_valid = has_live_head or self.manual_head_fallback.get()
-                settings.head_pitch_deg = (float(self.sensor_head) if has_live_head
-                                           else float(self.head.get()))
+                settings.tof_valid = (self.serial.connected and
+                                      now - self.last_tof_wall < 2.2)
+                relative = self.tilt.relative(now, self.head_axis.get(), self.chest_axis.get(),
+                                              self.invert_head.get(), self.invert_chest.get())
+                has_pair = self.serial.connected and relative is not None
+                fallback = self.manual_head_fallback.get()
+                settings.head_valid = has_pair or fallback
+                settings.chest_valid = has_pair or fallback
+                settings.head_pitch_deg = (relative if has_pair else float(self.head.get()))
         return settings
 
     def tick(self):
@@ -460,31 +463,41 @@ class MonitorApp(tk.Tk):
         self.state_label.config(text=data["status"],
                                 fg=RED if "ARREST" in data["status"] else
                                 YELLOW if data["status"] != "STABLE" else GREEN)
-        self.head_display.config(text=f"Head relative pitch: {settings.head_pitch_deg:+.0f}°")
+        now = time.monotonic()
+        head_angle = self.tilt.measure("head", self.head_axis.get(), self.invert_head.get(), now)
+        chest_angle = self.tilt.measure("chest", self.chest_axis.get(), self.invert_chest.get(), now)
+        if settings.mode == "reactive" and settings.source == "serial" and not self.tilt.zeroed:
+            self.head_display.config(text="Head/chest angle: ZERO BOTH IMUs first")
+        elif settings.mode == "reactive" and settings.source == "serial" and not settings.head_valid:
+            self.head_display.config(text="Head/chest angle: NO FRESH DATA")
+        else:
+            self.head_display.config(text=f"Head relative to chest: {settings.head_pitch_deg:+.1f}°")
         if settings.source == "serial" and self.serial.connected:
-            tof_text = (f"Real ToF distance: {self.tof.latest_mm:.0f} mm"
+            tof_text = (f"Real B1 ToF distance: {self.tof.latest_mm:.0f} mm"
                         if settings.tof_valid and self.tof.latest_mm is not None
-                        else "Real ToF: NO FRESH DATA")
+                        else "Real B1 ToF: NO FRESH DATA")
         else:
             tof_text = f"Virtual ToF distance: {float(self.mock_tof.get()):.0f} mm"
         self.tof_display.config(text=tof_text)
         if settings.source == "serial":
-            fresh_imu = (self.serial.connected and self.sensor_head is not None
-                         and time.monotonic() - self.last_imu_wall < 2.2)
-            head_state = "LIVE" if fresh_imu else ("MANUAL FALLBACK" if self.manual_head_fallback.get() else "NO DATA")
-            pr = (str(self.pressure.latest) if settings.pressure_valid else "NO DATA")
-            tof = (str(self.tof.latest_mm) if settings.tof_valid else "NO DATA")
-            self.sensor_health.config(text=f"A1 head: {head_state}\nA2 pressure ADC: {pr}\nB1 ToF mm: {tof}")
+            h = f"{head_angle:+.1f}°" if head_angle is not None else "NO DATA"
+            c = f"{chest_angle:+.1f}°" if chest_angle is not None else "NO DATA"
+            pr = str(self.pressure.latest) if settings.pressure_valid else "NO DATA"
+            tof = str(self.tof.latest_mm) if settings.tof_valid else "NO DATA"
+            self.sensor_health.config(text=f"A1 head IMU: {h}\nA2 pressure ADC: {pr}\n"
+                                           f"B1 ToF: {tof}\nB2 chest IMU: {c}\n"
+                                           f"Neutral calibration: {'YES' if self.tilt.zeroed else 'NO'}")
         else:
-            self.sensor_health.config(text="Virtual input (not measuring hardware)")
-        connection = ("CONNECTED" if self.serial.connected else "NOT CONNECTED")
+            self.sensor_health.config(text="Virtual input (not measuring physical sensors)")
+        connection = "CONNECTED" if self.serial.connected else "NOT CONNECTED"
         self.connection_button.config(text="Disconnect" if self.serial.connected else "Connect COM")
         if settings.mode == "default":
-            self.technical.config(text="DEFAULT • physiological scenario runs independently of all sensors")
+            self.technical.config(text="DEFAULT • illustrative physiology independent of all sensors")
         else:
             note = ("virtual input" if settings.source == "virtual" else
-                    f"COM3 {connection} | pressure {'VALID' if settings.pressure_valid else 'NO DATA'}")
-            self.technical.config(text=f"REACTIVE • {note} | Head chest-reference = 0° (assumed)")
+                    f"{self.port.get()} {connection} | pressure {'VALID' if settings.pressure_valid else 'NO DATA'}")
+            self.technical.config(text=f"REACTIVE • {note} | head-to-chest: "
+                                       f"{'CALIBRATED' if self.tilt.zeroed else 'NOT ZEROED'}")
         self.explain.config(text=f"Airway effectiveness: {self.model.airway * 100:.0f}% [toy model]  •  "
                                  f"ToF CPR activity: {data['cpr_rate']}/min  •  "
                                  "SpO₂/HR/EtCO₂ are SIMULATED, not measured")
