@@ -12,6 +12,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 
 from engine import PatientEngine, PressureBreathDetector, Settings, ToFCompressionDetector
+from dual_imu import TiltPair
 from serial_bridge import SerialBridge
 
 BG = "#080f1a"
@@ -36,6 +37,7 @@ class MonitorApp(tk.Tk):
         self.model = PatientEngine()
         self.pressure = PressureBreathDetector()
         self.tof = ToFCompressionDetector()
+        self.tilt = TiltPair()
         self.serial = SerialBridge()
         self.last_wall = time.monotonic()
         self.last_pressure_wall = -1e6
@@ -58,7 +60,12 @@ class MonitorApp(tk.Tk):
         self.auto_breath = tk.BooleanVar(value=True)
         self.manual_head_fallback = tk.BooleanVar(value=False)
         self.tof_polarity = tk.StringVar(value="closer")
-        self.sensor_head = None  # live head angle only when future IMU firmware emits it
+        self.sensor_head = None  # legacy one-IMU display support only
+        self.head_axis = tk.StringVar(value="pitch")
+        self.chest_axis = tk.StringVar(value="pitch")
+        self.invert_head = tk.BooleanVar(value=False)
+        self.invert_chest = tk.BooleanVar(value=False)
+        self.imus_ready: set[str] = set()
         self.scanned = {"A2": set(), "B2": set()}
         self.good_scans = 0
 
@@ -159,25 +166,40 @@ class MonitorApp(tk.Tk):
                 side="left", expand=True, fill="x", padx=2)
         imu_commands = tk.Frame(controls, bg=PANEL)
         imu_commands.pack(fill="x", pady=(5, 0))
-        for title, command in (("Start IMU m", "m"), ("Zero tilt z", "z"),
-                               ("Flip tilt f", "f"), ("Axis j", "j")):
-            self.button(imu_commands, title, lambda c=command: self.serial_command(c)).pack(
-                side="left", expand=True, fill="x", padx=2)
-        self.label(controls, "Real head tilt: enable IMU m before acquire g.\nZero the IMU with head neutral; test physical flexion direction.", 8).pack(fill="x")
+        self.button(imu_commands, "Boot BOTH IMUs (m)",
+                    lambda: self.serial_command("m")).pack(side="left", expand=True, fill="x")
+        self.button(imu_commands, "ZERO head/chest",
+                    self.zero_pair).pack(side="left", expand=True, fill="x", padx=(4, 0))
+        self.label(controls, "Order: Select c, scan i twice, Status s, boot m, Acquire g.\n"
+                   "Set both IMUs in their neutral positions, then ZERO.", 8).pack(fill="x")
         self.sensor_health = self.label(controls, "LIVE: disconnected", size=9, color=YELLOW)
         self.sensor_health.pack(fill="x", pady=(7, 0))
         tk.Checkbutton(controls, text="Allow manual head fallback if IMU absent",
                        variable=self.manual_head_fallback, bg=PANEL, fg=INK,
                        activebackground=PANEL, activeforeground=INK,
                        selectcolor="#214568").pack(anchor="w", pady=(3, 2))
-        self.label(controls, "Fallback is OFF by default: no real head data means no assumed neutral airway.", 8).pack(fill="x")
+        self.label(controls, "Fallback OFF by default: missing head OR chest holds physiology.", 8).pack(fill="x")
 
         tk.Frame(controls, height=1, bg="#30435a").pack(fill="x", pady=13)
-        self.label(controls, "HEAD IMU (A1) • CHEST ASSUMED LEVEL", 9, INK, True).pack(fill="x")
-        self.head_display = self.label(controls, "Head relative pitch: 0°", 10, BLUE)
+        self.label(controls, "A1 HEAD IMU vs B2 CHEST IMU", 9, INK, True).pack(fill="x")
+        self.head_display = self.label(controls, "Head relative to chest: NOT CALIBRATED", 10, BLUE)
         self.head_display.pack(fill="x", pady=(3, 0))
+        axis_row = tk.Frame(controls, bg=PANEL)
+        axis_row.pack(fill="x", pady=(3, 0))
+        self.label(axis_row, "Head axis", 8).pack(side="left")
+        ttk.Combobox(axis_row, state="readonly", textvariable=self.head_axis, width=7,
+                     values=("pitch", "roll")).pack(side="left", padx=(4, 8))
+        self.label(axis_row, "Chest axis", 8).pack(side="left")
+        ttk.Combobox(axis_row, state="readonly", textvariable=self.chest_axis, width=7,
+                     values=("pitch", "roll")).pack(side="left", padx=4)
+        tk.Checkbutton(controls, text="Invert head direction", variable=self.invert_head,
+                       bg=PANEL, fg=INK, selectcolor="#214568").pack(anchor="w")
+        tk.Checkbutton(controls, text="Invert chest direction", variable=self.invert_chest,
+                       bg=PANEL, fg=INK, selectcolor="#214568").pack(anchor="w")
+        self.label(controls, "Zero with BOTH mounted sensors in their neutral pose.\n"
+                   "Changing axis or sign requires re-zeroing.", 8).pack(fill="x")
+        self.label(controls, "Manual head-to-chest pitch (virtual or explicit fallback)", 8).pack(fill="x")
         self.scale(controls, self.head, -60, 60, 1)
-        self.label(controls, "Manual pitch until IMU firmware publishes angles;\nnegative = flexion (toy convention).", 8).pack(fill="x")
 
         tk.Frame(controls, height=1, bg="#30435a").pack(fill="x", pady=10)
         self.label(controls, "PRESSURE / VENTILATION (A2)", 9, INK, True).pack(fill="x")
