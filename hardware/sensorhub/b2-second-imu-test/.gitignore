@@ -1,0 +1,4 @@
+.pio/
+lib/BHI360Vendor/
+__pycache__/
+logs/
