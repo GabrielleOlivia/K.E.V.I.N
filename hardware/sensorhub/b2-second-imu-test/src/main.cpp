@@ -21,7 +21,11 @@ constexpr uint8_t BHI_CHIP_ID_REG = 0x2B;
 constexpr uint8_t BHI_CHIP_ID = 0x7A;
 constexpr uint8_t BMM_CHIP_ID_REG = 0x00;
 constexpr uint8_t BMM_CHIP_ID = 0x33;
-constexpr uint8_t MAX_XFER = 28; // Arduino Wire 32-byte TX with 1 reg byte
+// The Bosch virtual-sensor presence parameter has a 32-byte response.
+// SAMD21 Adafruit Wire uses a 256-byte RX ring buffer, so a 32-byte READ fits.
+// The previous 28-byte read guard rejected that mandatory transfer (I/O -3).
+constexpr uint8_t MAX_XFER = 28; // SDK chunk size and conservative write bound
+constexpr uint8_t MAX_READ = 32; // required for the virtual-sensor presence query
 TwoWire imuBus(&sercom2, SDA_PIN, SCL_PIN);
 bool wireStarted = false;
 bool idsValid = false;
@@ -135,11 +139,27 @@ uint32_t lastSample = 0;
 uint32_t lastReport = 0;
 
 int8_t readBosch(uint8_t reg, uint8_t *data, uint32_t len, void *) {
-  if (!data || len == 0 || len > MAX_XFER) return -1;
+  if (!data || len == 0 || len > MAX_READ) {
+    Serial.print("# IMU_I2C_READ_REJECT reg=0x");
+    Serial.print(reg, HEX);
+    Serial.print(" len=");
+    Serial.println(len);
+    return -1;
+  }
   imuBus.beginTransmission(BHI_ADDR);
   imuBus.write(reg);
   if (imuBus.endTransmission(false) != 0) return -1;
-  if (imuBus.requestFrom(BHI_ADDR, (uint8_t)len, (uint8_t)true) != len) return -1;
+  const size_t received = imuBus.requestFrom(BHI_ADDR, (uint8_t)len, (uint8_t)true);
+  if (received != len) {
+    Serial.print("# IMU_I2C_READ_SHORT reg=0x");
+    Serial.print(reg, HEX);
+    Serial.print(" requested=");
+    Serial.print(len);
+    Serial.print(" received=");
+    Serial.println(received);
+    while (imuBus.available()) (void)imuBus.read();
+    return -1;
+  }
   for (uint32_t i=0; i<len; ++i) {
     if (!imuBus.available()) return -1;
     data[i] = (uint8_t)imuBus.read();
@@ -222,8 +242,15 @@ void startAcceleration() {
   rc = bhi360_get_and_process_fifo(fifo, sizeof(fifo), &bhi);
   if (rc != BHI360_OK) { fail("initial_fifo", rc); return; }
   rc = bhi360_update_virtual_sensor_list(&bhi);
-  if (rc != BHI360_OK || !bhi360_is_sensor_available(BHI360_SENSOR_ID_ACC, &bhi)) {
-    fail("accelerometer_not_available", rc); return;
+  if (rc != BHI360_OK) {
+    // An SDK I/O failure is not evidence that the accelerometer is absent.
+    fail("virtual_sensor_list_io", rc); return;
+  }
+  const uint8_t available = bhi360_is_sensor_available(BHI360_SENSOR_ID_ACC, &bhi);
+  Serial.print("# IMU_SENSOR_LIST_READY accel_available=");
+  Serial.println(available ? 1 : 0);
+  if (!available) {
+    fail("accelerometer_not_available", BHI360_E_PARAM_NOT_SET); return;
   }
   bhi360_virtual_sensor_conf_param_conf cfg = {};
   cfg.sample_rate = 25.0f;
