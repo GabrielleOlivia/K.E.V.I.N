@@ -1,3 +1,15 @@
+# K.E.V.I.N. four-sensor live simulator v0.3 (new experimental branch)
+
+**This branch updates the simulator for all FOUR physical modules**: A1 head IMU (BHI360/BMM350), A2 MCP3426 pressure, B1 VL6180X ToF, and B2 chest IMU (BHI360/BMM350). The two IMUs emit independent raw XYZ accelerometer samples. The Python program calculates the **head tilt relative to chest tilt** after an explicit two-sensor neutral calibration. Both IMUs must be fresh; when either is missing or uncalibrated the toy physiology holds instead of treating the head as neutral. Pressure pulses remain ventilation-pressure proxies; ToF displacement remains a CPR movement proxy; simulated oxygen/heart rate are not clinical data.
+
+**Status:** the **B2-only IMU bench test succeeded** with actual changing XYZ readings, but loose wiring caused intermittent failures. The new **four-sensor firmware has not yet been built/flashed or tested with all four modules simultaneously**. Fix the B2 wiring first and follow the staged build/scan/boot steps in [FOUR_SENSOR_SETUP.md](../../hardware/sensorhub/samd21-pressure-a2-tof-b2/FOUR_SENSOR_SETUP.md). The old default firmware is unchanged.
+
+In the GUI, use SENSOR-REACTIVE > Real SensorHub, then Select c, Scan i twice, Status s, Boot BOTH IMUs (m), Acquire g; when both motion streams are fresh and the sensors are in neutral poses, click ZERO head/chest. Configure per-sensor pitch/roll and invert signs based on mounting. An axis/sign change invalidates the previous calibration until re-zero. One IMU alone cannot supply a valid relative neck tilt.
+
+The relative angle is a training-only gravity-vector approximation, **not** a medically validated airway angle; accelerometer-only measurements do not resolve yaw or dynamic movement. The demo's numerical thresholds must not be interpreted as infant clinical criteria.
+
+---
+
 # K.E.V.I.N. Live Physical Sensors — desktop simulator v0.2
 
 **What is available now:** This monitor reads real serial frames produced by your already-tested SensorHub pressure and ToF firmware, detects positive pressure pulses as training "breaths", and registers repeated changes in physical B1 ToF distance as **CPR proxy events** (with a separate CPR waveform and rate). Both affect the same simulated patient state, not isolated widgets. The original firmware has **not** been rewritten or overwritten.
