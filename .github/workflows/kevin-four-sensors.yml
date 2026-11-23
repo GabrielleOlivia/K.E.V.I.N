@@ -1,0 +1,33 @@
+name: K.E.V.I.N. four sensor validation
+on:
+  push:
+    branches:
+      - feature/four-sensor-live-integration-2026-11-23
+  workflow_dispatch:
+jobs:
+  simulator-unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m compileall -q software/kevin_patient_simulator
+      - run: python -m unittest discover -s software/kevin_patient_simulator/tests -v
+  four-sensor-compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install platformio
+      - name: Install pinned-at-run Bosch SensorAPI dependency
+        working-directory: hardware/sensorhub/samd21-pressure-a2-tof-b2
+        run: python scripts/vendor_bhi360_four.py
+      - name: Compile separate experimental four-sensor image
+        working-directory: hardware/sensorhub/samd21-pressure-a2-tof-b2
+        run: pio run -e kevin_four_sensors
+      - name: Compile unchanged base diagnostic firmware
+        working-directory: hardware/sensorhub/samd21-pressure-a2-tof-b2
+        run: pio run -e adafruit_feather_m0_express
