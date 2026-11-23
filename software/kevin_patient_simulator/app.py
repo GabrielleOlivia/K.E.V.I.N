@@ -276,27 +276,34 @@ class MonitorApp(tk.Tk):
             return
         if command in ("g", "m"):
             if self.good_scans < 2:
-                self.note("Acquire blocked: need two clean scans with A1+A2+B1 present")
+                self.note("Command blocked: need two clean A1+A2+B1+B2 scans")
+                return
+            if command == "g" and self.imus_ready != {"head", "chest"}:
+                self.note("Acquire blocked: boot BOTH head and chest IMUs with m")
                 return
             if not messagebox.askyesno(
-                "Verify the hardware before starting",
-                "Confirm A1=BHI360 IMU, A2=pressure ADC, B1=VL6180X ToF.\n\n"
-                "The 'm' command uploads Bosch firmware to the BHI360 and "
-                "requires the separately built EXPERIMENTAL live SensorHub image. "
-                "The 'g' command reads/writes pressure and ToF registers.\n\n"
-                "Do not proceed if connections are unverified or the scan "
-                "shows abnormal addresses. Is this setup verified?"):
+                "Verify all four physical connections",
+                "A1 = head BHI360+BMM350, A2 = MCP3426 pressure,\n"
+                "B1 = VL6180X ToF, B2 = chest BHI360+BMM350.\n\n"
+                "The m command boots BOTH IMUs (writes their RAM); g starts\n"
+                "pressure ADC and ToF acquisition.\n\n"
+                "B2 wires were loose in earlier tests. Power OFF and repair\n"
+                "connections before using this four-sensor experiment.\n"
+                "All four modules securely attached and pinouts verified?"):
                 return
-        if command == "i":
-            # The new scan will be counted only on its complete B-bus SCAN_END.
-            pass
-        if command in ("m", "z", "f", "j") and self.good_scans < 2:
-            self.note("IMU control blocked: need two clean scans")
-            return
         if self.serial.send(command):
-            self.note(f"Sent v1 command: {command}")
+            self.note(f"Sent four-sensor command: {command}")
         else:
-            self.note("COM3 not connected (or command failed)")
+            self.note("Serial port not connected or command failed")
+
+    def zero_pair(self):
+        now = time.monotonic()
+        ok = self.tilt.zero(now, self.head_axis.get(), self.chest_axis.get(),
+                            self.invert_head.get(), self.invert_chest.get())
+        if ok:
+            self.note("Both IMU neutral references captured; verify known head flexion")
+        else:
+            self.note("ZERO FAILED: both IMUs need fresh, valid XYZ readings")
 
     def toggle_connection(self):
         if self.serial.connected or (self.serial._thread and self.serial._thread.is_alive()):
@@ -334,6 +341,8 @@ class MonitorApp(tk.Tk):
         self.next_mock_breath = 0.0
         self.mock_tof_last = None
         self.sensor_head = None
+        self.tilt = TiltPair()
+        self.imus_ready = set()
         self.scanned = {"A2": set(), "B2": set()}
         self.good_scans = 0
         self.last_reported_state = ""
