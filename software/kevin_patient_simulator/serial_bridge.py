@@ -41,7 +41,7 @@ def parse_line(line: str) -> Reading | None:
     if s.startswith(("IMU_", "DUAL_IMU_", "FOUR_")):
         return Reading("imu_status", s)
     if s.startswith("accel,"):
-        fields = dict(re.findall(r"([a-z_]+)=([^,\\s]+)", s))
+        fields = dict(re.findall(r"([a-z_]+)=([^,\s]+)", s))
         role = fields.get("sensor")
         if fields.get("valid") != "1" or role not in ("head", "chest"):
             return None
