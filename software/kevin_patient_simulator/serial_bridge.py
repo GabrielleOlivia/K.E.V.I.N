@@ -1,12 +1,12 @@
-"""Nonblocking bridge for the unmodified SensorHub v1 serial diagnostics.
+"""Nonblocking bridge for K.E.V.I.N. v0.3 four-sensor serial diagnostics.
 
-Can use current pressure/tof frames. The current firmware does NOT publish BHI360
-head pitch; optional future CSV frame `# imu,head_pitch_deg=12.3,valid=1`
-may be consumed when a separately validated IMU motion driver exists.
+Supports two independent BHI360 raw XYZ frames; pressure and ToF protocols
+remain backward compatible. No serial data are assumed valid when stale.
 """
 from __future__ import annotations
 
 import queue
+import math
 import re
 import threading
 from dataclasses import dataclass
@@ -15,7 +15,7 @@ from dataclasses import dataclass
 @dataclass
 class Reading:
     kind: str
-    value: float | str
+    value: float | str | tuple[float, float, float]
 
 
 def parse_line(line: str) -> Reading | None:
@@ -38,8 +38,20 @@ def parse_line(line: str) -> Reading | None:
             return Reading("tof", float(fields["raw_mm"]))
         except (ValueError, KeyError):
             return None
-    if s.startswith("IMU_"):
+    if s.startswith(("IMU_", "DUAL_IMU_", "FOUR_")):
         return Reading("imu_status", s)
+    if s.startswith("accel,"):
+        fields = dict(re.findall(r"([a-z_]+)=([^,\\s]+)", s))
+        role = fields.get("sensor")
+        if fields.get("valid") != "1" or role not in ("head", "chest"):
+            return None
+        try:
+            xyz = tuple(float(fields[k]) for k in ("x_raw", "y_raw", "z_raw"))
+            if all(math.isfinite(value) for value in xyz):
+                return Reading(f"{role}_accel", xyz)
+        except (ValueError, KeyError):
+            pass
+        return None
     if s.startswith("imu,"):
         fields = dict(re.findall(r"([a-z_]+)=([^,\s]+)", s))
         if fields.get("valid", "1") != "1":
@@ -69,7 +81,7 @@ class SerialBridge:
 
     def send(self, command: str) -> bool:
         """Only a single permitted v1 menu character, explicitly user-triggered."""
-        if command not in ("c", "i", "s", "g", "m", "z", "f", "j") or not self.connected or self._port is None:
+        if command not in ("c", "i", "s", "g", "m") or not self.connected or self._port is None:
             return False
         try:
             self._port.write((command + "\n").encode("ascii"))
