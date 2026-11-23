@@ -1,6 +1,26 @@
 # K.E.V.I.N. — second IMU (physical Sensor B2) bench test
 
-**Status: B2 identity test PASSED on the actual SAMD21; the optional XYZ firmware has not yet compiled successfully or been tested on hardware.** This is a *separate project* from the working three-sensor scanner and the live-monitor simulator. Only the second IMU should be connected while testing. Do not use the original scanner's `g` command with an IMU on Bus B: that command assumes a VL6180X ToF at `0x29`.
+**Status: B2 identity test PASSED on hardware and the optional XYZ firmware COMPILED successfully on Windows; upload and physical XYZ readings are not yet verified.** This is a *separate project* from the working three-sensor scanner and the live-monitor simulator. Only the second IMU should be connected while testing. Do not use the original scanner's `g` command with an IMU on Bus B: that command assumes a VL6180X ToF at `0x29`.
+
+## Verified Windows build — 23 November 2026
+
+**User-reported actual PlatformIO build output after the Bosch SDK port fix:**
+
+```text
+& $pio run -e b2_imu_accel -t clean
+[SUCCESS] Took 0.60 seconds
+
+& $pio run -e b2_imu_accel
+RAM:   14.7% (used 4816 bytes from 32768 bytes)
+Flash: 39.0% (used 102340 bytes from 262144 bytes)
+Building .pio\\build\\b2_imu_accel\\firmware.bin
+[SUCCESS] Took 3.82 seconds
+```
+
+- Target: Adafruit Feather M0 Express / SAMD21G18A, 48 MHz, 32 KiB RAM, 256 KiB flash; `atmelsam@9.0.0`, Arduino framework.
+- Bosch vendor source commit printed by installer: `6b4696f84fd65185f85f10c391a7abd3d3602bf1`.
+- The compile and link **passed** with the patched Bosch embedded-source subset. `firmware.bin` was generated. This confirms build viability and adequate statically reported memory, **not** sensor initialization or runtime FIFO data.
+- **Next test remains UNVERIFIED:** optional flash to COM3, then `i`, `s`, and finally `m` with ONLY the physical B2 IMU connected. Check for `# IMU_READY...` and actual changing `# accel,...,valid=1` readings; report any `# IMU_FAULT`. Do not use `g`. Power off before rewiring.
 
 ## BHI360 accelerometer build fix — 23 November 2026
 
