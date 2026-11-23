@@ -2,6 +2,28 @@
 
 **Status: SOURCE PREPARED. Not built, flashed or tested on the actual SAMD21 yet.** This is a *separate project* from the working three-sensor scanner and the live-monitor simulator. Only the second IMU should be connected while testing. Do not use the original scanner's `g` command with an IMU on Bus B: that command assumes a VL6180X ToF at `0x29`.
 
+## Confirmed physical chip-ID test — 23 November 2026
+
+**Actual user-reported COM3 output from the read-only B2 test firmware:**
+
+```text
+# SCAN_START bus=B2
+# SCAN_FOUND bus=B2 address=0x14
+# SCAN_FOUND bus=B2 address=0x28
+# SCAN_END bus=B2 count=2
+# SCAN_START bus=B2
+# SCAN_FOUND bus=B2 address=0x14
+# SCAN_FOUND bus=B2 address=0x28
+# SCAN_END bus=B2 count=2
+# BHI360_B2 chip_id=0x7A expected=0x7A
+# BMM350_B2 chip_id=0x33 expected=0x33
+# B2_IMU_IDENTIFIED BOTH_CHIPS
+```
+
+**Interpretation:** Both chip-identity reads passed with exactly the expected chip IDs, beyond prior address-level ACKs. Two consecutive scans in this log also found only the expected addresses. This establishes short-term I²C/identity communication with the only connected IMU, **not** X/Y/Z data, sustained timing, mechanical mounting quality, or sensor fusion. The source corresponds to the read-only `b2_imu_id_only` stage; exact flashed binary hash not recorded.
+
+**Next:** close serial monitor; install official Bosch SDK locally using `py -3 scripts/vendor_bhi360.py`; `& $pio run -e b2_imu_accel` (BUILD ONLY). Examine build output and memory consumption before optionally uploading or using command `m`. The experimental motion firmware remains unvalidated on hardware.
+
 ## Evidence from 23 November 2026
 
 User's COM3 scans repeatedly returned exactly `0x14` and `0x28` on `bus=B2` (four additional successful consecutive scans, on top of two earlier), with no extra addresses. These are the candidate BMM350 (`0x14`) and BHI360 (`0x28`) alternate I²C addresses. This only establishes ACK responses, **not** chip identity or live motion readings.
