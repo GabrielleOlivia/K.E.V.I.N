@@ -1,6 +1,28 @@
 # K.E.V.I.N. — second IMU (physical Sensor B2) bench test
 
-**Status: SOURCE PREPARED. Not built, flashed or tested on the actual SAMD21 yet.** This is a *separate project* from the working three-sensor scanner and the live-monitor simulator. Only the second IMU should be connected while testing. Do not use the original scanner's `g` command with an IMU on Bus B: that command assumes a VL6180X ToF at `0x29`.
+**Status: B2 identity test PASSED on the actual SAMD21; the optional XYZ firmware has not yet compiled successfully or been tested on hardware.** This is a *separate project* from the working three-sensor scanner and the live-monitor simulator. Only the second IMU should be connected while testing. Do not use the original scanner's `g` command with an IMU on Bus B: that command assumes a VL6180X ToF at `0x29`.
+
+## BHI360 accelerometer build fix — 23 November 2026
+
+The first real Windows `pio run -e b2_imu_accel` **FAILED** at compile time (hardware not implicated):
+
+- `bhi360_event_data_defs.h:146: non-trivial designated initializers not supported`: Bosch's upstream header contains three C99 lookup arrays which GCC 9's Arduino C++ compiler cannot parse as C++.
+- `bhi360_parse.c:41: fatal error: verbose.h: No such file or directory`: the original vendoring installed host-side Bosch/COINES examples as though they were embedded driver code.
+
+**Fix committed:** `scripts/vendor_bhi360.py` now (1) limits PlatformIO compilation to six required Bosch driver C source files, excluding the host example parser, and (2) hides only the three unused C99 lookup arrays when included by Arduino C++ while keeping them intact for Bosch C source. It creates `lib/BHI360Vendor/KEVIN_BHI360_PLATFORMIO_PORT_v1.txt`; on the next run it automatically replaces the previously installed unpatched vendor folder. There is **no edit to `src/main.cpp`**, to any tested chip-ID behavior, or to the original scanner. PlatformIO build success has **not** been confirmed after this fix.
+
+From **this** Git worktree's `hardware/sensorhub/b2-second-imu-test` directory:
+
+```powershell
+git fetch origin
+git merge --ff-only origin/feature/b2-second-imu-xyz-test-2026-11-23
+$pio = "$env:USERPROFILE\.platformio\penv\Scripts\platformio.exe"
+py -3 scripts/vendor_bhi360.py
+& $pio run -e b2_imu_accel -t clean
+& $pio run -e b2_imu_accel
+```
+
+Review compiler/linker success and **flash/RAM usage** before any upload. If new failures appear, save the full log. Do not edit Bosch headers manually or upload on a failed build.
 
 ## Confirmed physical chip-ID test — 23 November 2026
 
