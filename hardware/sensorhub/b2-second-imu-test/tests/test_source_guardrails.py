@@ -32,5 +32,15 @@ class GuardrailTests(unittest.TestCase):
         self.assertIn("if (c == 'm') startAcceleration()", SRC)
         self.assertNotIn("if (c == 'g')", SRC)
 
+    def test_virtual_sensor_presence_32byte_read_regression(self):
+        # Bosch present_buff[] is 32 bytes; a 28-byte read cap produces -3.
+        self.assertIn("constexpr uint8_t MAX_XFER = 28", SRC)
+        self.assertIn("constexpr uint8_t MAX_READ = 32", SRC)
+        self.assertIn("len > MAX_READ", SRC)
+        self.assertIn("imuBus.requestFrom(BHI_ADDR", SRC)
+        self.assertIn('fail("virtual_sensor_list_io", rc)', SRC)
+        self.assertIn("bhi360_is_sensor_available(BHI360_SENSOR_ID_ACC", SRC)
+
+
 if __name__ == "__main__":
     unittest.main()
