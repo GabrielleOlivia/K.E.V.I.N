@@ -2,6 +2,40 @@
 
 **Status: B2 identity test PASSED on hardware and the optional XYZ firmware COMPILED successfully on Windows; upload and physical XYZ readings are not yet verified.** This is a *separate project* from the working three-sensor scanner and the live-monitor simulator. Only the second IMU should be connected while testing. Do not use the original scanner's `g` command with an IMU on Bus B: that command assumes a VL6180X ToF at `0x29`.
 
+## First physical BHI360 startup attempt — 23 November 2026 (FAILED at sensor-list I²C)
+
+User-reported COM3 output (experimental build, second IMU alone on B2):
+
+```text
+# BHI360_B2 chip_id=0x7A expected=0x7A
+# BMM350_B2 chip_id=0x33 expected=0x33
+# B2_IMU_IDENTIFIED BOTH_CHIPS
+# IMU_FIRMWARE_START B2 BHI360@0x28 experimental
+# IMU_UPLOAD bytes=0 total=82648
+...
+# IMU_UPLOAD bytes=79872 total=82648
+# IMU_FAULT stage=accelerometer_not_available code=-3
+```
+
+**Evidence and diagnosis:** Bosch's header defines `BHI360_E_IO=-3`, not "sensor absent." The stage in our old code combined the returned error from `bhi360_update_virtual_sensor_list` with the availability check. Bosch's `bhi360_system_param_get_virtual_sensor_present` asks for a **32-byte** buffer; our previous `readBosch` callback rejected any read **over 28 bytes**, which is sufficient to produce this exact I/O error. It is a plausible and directly supported firmware bug, not proof that hardware is defective. The last firmware-upload progress message does not independently confirm valid X/Y/Z output; kernel-version read appears to have succeeded since the code reached the sensor-list check.
+
+**Fix applied (not yet hardware-retested):** The BHI360 I²C RX callback now permits up to **32 bytes** while keeping the conservative 28-byte write limit. Adafruit's SAMD21 Arduino `TwoWire` library has a 256-byte RX ring buffer. The code reports `# IMU_I2C_READ_REJECT`/`# IMU_I2C_READ_SHORT` if a transfer is rejected/short, `# IMU_FAULT stage=virtual_sensor_list_io code=...` if Bosch list retrieval fails, and `# IMU_SENSOR_LIST_READY accel_available=1` if present.
+
+Rebuild/flash with only this B2 IMU connected and no other program using COM3:
+
+```powershell
+cd "$env:USERPROFILE\Documents\KEVIN-B2-IMU\hardware\sensorhub\b2-second-imu-test"
+git fetch origin
+git merge --ff-only origin/feature/b2-second-imu-xyz-test-2026-11-23
+$pio = "$env:USERPROFILE\.platformio\penv\Scripts\platformio.exe"
+& $pio run -e b2_imu_accel
+# If SUCCESS and memory remains within limits, optional flash:
+& $pio run -e b2_imu_accel -t upload --upload-port COM3
+& $pio device monitor -p COM3 -b 115200 -f send_on_enter -f log2file
+```
+
+At the monitor, check `i`, `s`, then explicitly `m` once. If a new failure occurs, preserve the full log instead of repeatedly initializing. No real accelerometer samples are confirmed yet.
+
 ## Verified Windows build — 23 November 2026
 
 **User-reported actual PlatformIO build output after the Bosch SDK port fix:**
