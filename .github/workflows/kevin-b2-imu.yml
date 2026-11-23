@@ -1,0 +1,41 @@
+name: B2 second IMU ID + accelerometer build
+on:
+  push:
+    branches:
+      - feature/b2-second-imu-xyz-test-2026-11-23
+  workflow_dispatch:
+jobs:
+  source-guardrails:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Static source checks
+        run: python -m unittest discover -s hardware/sensorhub/b2-second-imu-test/tests -v
+  safe-id-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install platformio
+      - name: Compile B2 ID-only test (read-only firmware)
+        working-directory: hardware/sensorhub/b2-second-imu-test
+        run: pio run -e b2_imu_id_only
+  experimental-xyz-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install platformio
+      - name: Vendor official Bosch SensorAPI + firmware lite
+        working-directory: hardware/sensorhub/b2-second-imu-test
+        run: python scripts/vendor_bhi360.py
+      - name: Compile experimental B2 XYZ sample firmware (no hardware flashing)
+        working-directory: hardware/sensorhub/b2-second-imu-test
+        run: pio run -e b2_imu_accel
