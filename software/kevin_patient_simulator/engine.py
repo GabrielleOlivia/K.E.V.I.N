@@ -20,10 +20,11 @@ class Settings:
     mode: str = "default"         # 'default' or 'reactive'
     source: str = "virtual"       # 'virtual' or 'serial'
     scenario: str = "Normal"      # Normal, Apnoea, Choking, Cardiac arrest
-    head_pitch_deg: float = 0.0   # chest is ASSUMED level at 0°
+    head_pitch_deg: float = 0.0   # neutral-referenced head minus chest tilt
     pressure_valid: bool = True  # False = sensor unavailable; NOT apnoea
     tof_valid: bool = True
-    head_valid: bool = True  # False = IMU pitch stale; NEVER assume neutral
+    head_valid: bool = True  # False = head IMU stale or uncalibrated
+    chest_valid: bool = True  # False = chest IMU stale or uncalibrated
     speed: float = 1.0
 
 
@@ -105,7 +106,7 @@ class ToFCompressionDetector:
 
 
 class PatientEngine:
-    """Directional physiology teaching toy, one head IMU + level chest assumption."""
+    """Directional physiology teaching toy driven by two relative IMU tilts."""
 
     NO_BREATH_SECONDS = 4.5     # DEMO timeout, not an infant diagnostic cut-off
 
@@ -168,8 +169,8 @@ class PatientEngine:
     def step(self, dt: float, settings: Settings):
         dt = clamp(dt, 0, 0.3) * clamp(settings.speed, 0.2, 8)
         self.time += dt
-        if settings.mode == "reactive" and not settings.head_valid:
-            self.status = "HEAD IMU SIGNAL UNAVAILABLE • physiology held"
+        if settings.mode == "reactive" and (not settings.head_valid or not settings.chest_valid):
+            self.status = "HEAD IMU / CHEST IMU SIGNAL UNAVAILABLE • physiology held"
             self.ventilating = False
             return
         self.head_pitch = settings.head_pitch_deg if settings.mode == "reactive" else 0.0
